@@ -1,0 +1,24 @@
+{
+  "name": "@browser-agent-kit/mcp",
+  "version": "0.0.1",
+  "description": "MCP tool wrapper for BrowserAgentKit.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node -e \"console.warn('no tests');\""
+  },
+  "dependencies": {
+    "@browser-agent-kit/core": "0.0.1"
+  }
+}

@@ -1,6 +1,6 @@
 {
   "name": "browseragentkit",
-  "version": "0.0.1",
+  "private": true,
   "description": "A developer-friendly toolkit for building LLM agents that live and work inside web applications.",
   "keywords": [
     "code",
@@ -18,9 +18,15 @@
   },
   "license": "SEE LICENSE IN LICENSE.md",
   "author": "bavadim@gmail.com",
-  "type": "commonjs",
-  "main": "index.js",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "npm -ws run build",
+    "test": "npm run build && npm -ws --if-present run test",
+    "lint": "npm -ws --if-present run lint"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
   }
 }
