@@ -205,15 +205,16 @@ export function jsInterpreterTool(): Tool {
 			type: "object",
 			properties: {
 				code: { type: "string", description: "JavaScript source to evaluate." },
-				async: { type: "boolean", description: "Whether to run as async." },
+				async: { type: ["boolean", "null"], description: "Whether to run as async." },
 			},
-			required: ["code"],
+			required: ["code", "async"],
 			additionalProperties: false,
 		},
 		async run(args: unknown, ctx: ToolContext): Promise<unknown> {
-			const { code, async } = args as { code: string; async?: boolean };
+			const { code, async } = args as { code: string; async?: boolean | null };
+			const isAsync = async ?? false;
 			const helpers = createInterpreterHelpers(ctx as RuntimeEnv | undefined);
-			if (async) {
+			if (isAsync) {
 				const fn = new Function(
 					"helpers",
 					`const { x, replaceSubtree, diffSubtree, viewRoot, document, window, $ } = helpers;` +
@@ -240,35 +241,37 @@ export function localStoreTool(options: { namespace?: string } = {}): Tool {
 			type: "object",
 			properties: {
 				op: { type: "string", description: "Operation: get, set, remove, keys." },
-				key: { type: "string" },
-				value: { type: "string" },
+				key: { type: ["string", "null"] },
+				value: { type: ["string", "null"] },
 			},
-			required: ["op"],
+			required: ["op", "key", "value"],
 			additionalProperties: false,
 		},
 		run(args: unknown, ctx: ToolContext): unknown {
-			const { op, key, value } = args as { op: string; key?: string; value?: string };
+			const { op, key, value } = args as { op: string; key?: string | null; value?: string | null };
+			const resolvedKey = key ?? undefined;
+			const resolvedValue = value ?? undefined;
 			const storage = getStorage(ctx as RuntimeEnv | undefined);
 
 			switch (op) {
 				case "get": {
-					if (!key) {
+					if (!resolvedKey) {
 						throw new Error("localStore.get requires key");
 					}
-					return storage.getItem(`${prefix}${key}`);
+					return storage.getItem(`${prefix}${resolvedKey}`);
 				}
 				case "set": {
-					if (!key) {
+					if (!resolvedKey) {
 						throw new Error("localStore.set requires key");
 					}
-					storage.setItem(`${prefix}${key}`, value ?? "");
+					storage.setItem(`${prefix}${resolvedKey}`, resolvedValue ?? "");
 					return { ok: true };
 				}
 				case "remove": {
-					if (!key) {
+					if (!resolvedKey) {
 						throw new Error("localStore.remove requires key");
 					}
-					storage.removeItem(`${prefix}${key}`);
+					storage.removeItem(`${prefix}${resolvedKey}`);
 					return { ok: true };
 				}
 				case "keys": {
