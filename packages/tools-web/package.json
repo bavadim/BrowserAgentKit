@@ -16,9 +16,12 @@
   ],
   "scripts": {
     "build": "node scripts/generate-descriptions.mjs && tsc -p tsconfig.json",
-    "test": "node -e \"console.warn('no tests');\""
+    "test": "node --experimental-loader ./scripts/resolve-loader.mjs --test"
   },
   "dependencies": {
     "@browser-agent-kit/core": "0.0.1"
+  },
+  "devDependencies": {
+    "jsdom": "^24.0.0"
   }
 }
