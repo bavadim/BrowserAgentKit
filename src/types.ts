@@ -37,29 +37,97 @@ export type ToolCall = {
 	args: unknown;
 };
 
-export type ModelMessage = ChatCompletionMessageParam;
-export type ModelTool = ChatCompletionTool;
+export type Message = ChatCompletionMessageParam;
+export type ToolDefinition = ChatCompletionTool;
 
-export type ModelRequest = {
-	messages: ModelMessage[];
-	tools?: ModelTool[];
+export type GenerateRequest = {
+	messages: Message[];
+	tools?: ToolDefinition[];
 	signal?: AbortSignal;
 };
 
-export type ModelResponse = {
-	message?: string;
-	toolCalls?: ToolCall[];
-	raw?: unknown;
+export enum StreamingEventType {
+	ResponseQueued = "response.queued",
+	ResponseCreated = "response.created",
+	ResponseInProgress = "response.in_progress",
+	ResponseOutputTextDelta = "response.output_text.delta",
+	ResponseOutputTextDone = "response.output_text.done",
+	ResponseFunctionCallArgumentsDelta = "response.function_call_arguments.delta",
+	ResponseFunctionCallArgumentsDone = "response.function_call_arguments.done",
+	ResponseCompleted = "response.completed",
+	ResponseFailed = "response.failed",
+	Error = "error",
+}
+
+export type ResponseQueuedEvent = { type: StreamingEventType.ResponseQueued };
+export type ResponseCreatedEvent = { type: StreamingEventType.ResponseCreated };
+export type ResponseInProgressEvent = { type: StreamingEventType.ResponseInProgress };
+
+export type ResponseOutputTextDeltaEvent = {
+	type: StreamingEventType.ResponseOutputTextDelta;
+	item_id?: string;
+	delta: string;
 };
 
-export type ModelGenerate = (req: ModelRequest) => Promise<ModelResponse>;
+export type ResponseOutputTextDoneEvent = {
+	type: StreamingEventType.ResponseOutputTextDone;
+	item_id?: string;
+	text: string;
+};
+
+export type ResponseFunctionCallArgumentsDeltaEvent = {
+	type: StreamingEventType.ResponseFunctionCallArgumentsDelta;
+	item_id: string;
+	delta: string;
+};
+
+export type ResponseFunctionCallArgumentsDoneEvent = {
+	type: StreamingEventType.ResponseFunctionCallArgumentsDone;
+	item_id: string;
+	name?: string;
+	arguments?: string;
+};
+
+export type ResponseCompletedEvent = { type: StreamingEventType.ResponseCompleted };
+export type ResponseFailedEvent = { type: StreamingEventType.ResponseFailed; error?: unknown };
+export type ResponseErrorEvent = { type: StreamingEventType.Error; error: unknown };
+
+export type StreamingEvent =
+	| ResponseQueuedEvent
+	| ResponseCreatedEvent
+	| ResponseInProgressEvent
+	| ResponseOutputTextDeltaEvent
+	| ResponseOutputTextDoneEvent
+	| ResponseFunctionCallArgumentsDeltaEvent
+	| ResponseFunctionCallArgumentsDoneEvent
+	| ResponseCompletedEvent
+	| ResponseFailedEvent
+	| ResponseErrorEvent;
+
+export type Generate = (req: GenerateRequest) => AsyncIterable<StreamingEvent>;
 
 export type AgentPolicies = {
 	maxSteps?: number;
 };
 
+export enum AgentStatusKind {
+	Thinking = "thinking",
+	CallingTool = "calling_tool",
+	ToolResult = "tool_result",
+	Done = "done",
+	Error = "error",
+}
+
+export type AgentStatus = {
+	kind: AgentStatusKind;
+	label?: string;
+	toolName?: string;
+};
+
 export type AgentEvent =
 	| { type: "message"; content: string }
+	| { type: "message.delta"; delta: string }
+	| { type: "status"; status: AgentStatus }
 	| { type: "tool.start"; name: string; args: unknown }
 	| { type: "tool.end"; name: string; result: unknown }
 	| { type: "artifact"; name: string; data: unknown }
@@ -67,7 +135,7 @@ export type AgentEvent =
 	| { type: "done" };
 
 export type AgentOptions = {
-	generate: ModelGenerate;
+	generate: Generate;
 	viewRoot?: Element;
 	context?: Partial<ToolContext>;
 	skills?: Skill[];

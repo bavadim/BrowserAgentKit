@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createAgent } from "../dist/index.js";
+import { createAgent, StreamingEventType } from "../dist/index.js";
 
 async function collectEvents(generator) {
 	const events = [];
@@ -10,33 +10,54 @@ async function collectEvents(generator) {
 	return events;
 }
 
+function streamFrom(events) {
+	return (async function* () {
+		for (const event of events) {
+			yield event;
+		}
+	})();
+}
+
 test("agent returns a message", async () => {
-	const generate = async () => ({ message: "hello" });
+	const generate = () =>
+		streamFrom([
+			{ type: StreamingEventType.ResponseCreated },
+			{ type: StreamingEventType.ResponseOutputTextDelta, delta: "hello" },
+			{ type: StreamingEventType.ResponseOutputTextDone, text: "hello" },
+			{ type: StreamingEventType.ResponseCompleted },
+		]);
 
 	const agent = createAgent({ generate });
 	const events = await collectEvents(agent.run("hi"));
 
+	const deltaEvent = events.find((ev) => ev.type === "message.delta");
 	const messageEvent = events.find((ev) => ev.type === "message");
+	assert.ok(deltaEvent);
 	assert.ok(messageEvent);
 	assert.equal(messageEvent.content, "hello");
 });
 
 test("agent executes tools when requested", async () => {
 	let calls = 0;
-	const generate = async () => {
+	const generate = () => {
 		if (calls === 0) {
 			calls += 1;
-			return {
-				toolCalls: [
-					{
-						id: "call-1",
-						name: "echo",
-						args: { value: "ok" },
-					},
-				],
-			};
+			return streamFrom([
+				{ type: StreamingEventType.ResponseCreated },
+				{
+					type: StreamingEventType.ResponseFunctionCallArgumentsDone,
+					item_id: "call-1",
+					name: "echo",
+					arguments: "{\"value\":\"ok\"}",
+				},
+				{ type: StreamingEventType.ResponseCompleted },
+			]);
 		}
-		return { message: "done" };
+		return streamFrom([
+			{ type: StreamingEventType.ResponseCreated },
+			{ type: StreamingEventType.ResponseOutputTextDone, text: "done" },
+			{ type: StreamingEventType.ResponseCompleted },
+		]);
 	};
 
 	const tool = {
@@ -63,20 +84,23 @@ test("agent executes tools when requested", async () => {
 
 test("agent emits error on unknown tool", async () => {
 	let calls = 0;
-	const generate = async () => {
+	const generate = () => {
 		if (calls === 0) {
 			calls += 1;
-			return {
-				toolCalls: [
-					{
-						id: "call-1",
-						name: "missing",
-						args: {},
-					},
-				],
-			};
+			return streamFrom([
+				{
+					type: StreamingEventType.ResponseFunctionCallArgumentsDone,
+					item_id: "call-1",
+					name: "missing",
+					arguments: "{}",
+				},
+				{ type: StreamingEventType.ResponseCompleted },
+			]);
 		}
-		return { message: "done" };
+		return streamFrom([
+			{ type: StreamingEventType.ResponseOutputTextDone, text: "done" },
+			{ type: StreamingEventType.ResponseCompleted },
+		]);
 	};
 
 	const agent = createAgent({ generate, tools: [] });
@@ -88,20 +112,23 @@ test("agent emits error on unknown tool", async () => {
 
 test("agent emits error when tool throws", async () => {
 	let calls = 0;
-	const generate = async () => {
+	const generate = () => {
 		if (calls === 0) {
 			calls += 1;
-			return {
-				toolCalls: [
-					{
-						id: "call-1",
-						name: "explode",
-						args: {},
-					},
-				],
-			};
+			return streamFrom([
+				{
+					type: StreamingEventType.ResponseFunctionCallArgumentsDone,
+					item_id: "call-1",
+					name: "explode",
+					arguments: "{}",
+				},
+				{ type: StreamingEventType.ResponseCompleted },
+			]);
 		}
-		return { message: "done" };
+		return streamFrom([
+			{ type: StreamingEventType.ResponseOutputTextDone, text: "done" },
+			{ type: StreamingEventType.ResponseCompleted },
+		]);
 	};
 
 	const tool = {
@@ -122,17 +149,17 @@ test("agent emits error when tool throws", async () => {
 
 test("agent stops after maxSteps", async () => {
 	let calls = 0;
-	const generate = async () => {
+	const generate = () => {
 		calls += 1;
-		return {
-			toolCalls: [
-				{
-					id: `call-${calls}`,
-					name: "noop",
-					args: {},
-				},
-			],
-		};
+		return streamFrom([
+			{
+				type: StreamingEventType.ResponseFunctionCallArgumentsDone,
+				item_id: `call-${calls}`,
+				name: "noop",
+				arguments: "{}",
+			},
+			{ type: StreamingEventType.ResponseCompleted },
+		]);
 	};
 
 	const tool = {
@@ -154,20 +181,23 @@ test("agent stops after maxSteps", async () => {
 
 test("agent parses JSON tool args", async () => {
 	let calls = 0;
-	const generate = async () => {
+	const generate = () => {
 		if (calls === 0) {
 			calls += 1;
-			return {
-				toolCalls: [
-					{
-						id: "call-1",
-						name: "echo",
-						args: JSON.stringify({ value: "ok" }),
-					},
-				],
-			};
+			return streamFrom([
+				{
+					type: StreamingEventType.ResponseFunctionCallArgumentsDone,
+					item_id: "call-1",
+					name: "echo",
+					arguments: "{\"value\":\"ok\"}",
+				},
+				{ type: StreamingEventType.ResponseCompleted },
+			]);
 		}
-		return { message: "done" };
+		return streamFrom([
+			{ type: StreamingEventType.ResponseOutputTextDone, text: "done" },
+			{ type: StreamingEventType.ResponseCompleted },
+		]);
 	};
 
 	const tool = {
@@ -188,20 +218,23 @@ test("agent parses JSON tool args", async () => {
 
 test("agent preserves non-JSON tool args", async () => {
 	let calls = 0;
-	const generate = async () => {
+	const generate = () => {
 		if (calls === 0) {
 			calls += 1;
-			return {
-				toolCalls: [
-					{
-						id: "call-1",
-						name: "echo",
-						args: "not json",
-					},
-				],
-			};
+			return streamFrom([
+				{
+					type: StreamingEventType.ResponseFunctionCallArgumentsDone,
+					item_id: "call-1",
+					name: "echo",
+					arguments: "not json",
+				},
+				{ type: StreamingEventType.ResponseCompleted },
+			]);
 		}
-		return { message: "done" };
+		return streamFrom([
+			{ type: StreamingEventType.ResponseOutputTextDone, text: "done" },
+			{ type: StreamingEventType.ResponseCompleted },
+		]);
 	};
 
 	const tool = {
@@ -221,7 +254,7 @@ test("agent preserves non-JSON tool args", async () => {
 });
 
 test("agent reports model errors", async () => {
-	const generate = async () => {
+	const generate = async function* () {
 		throw new Error("model down");
 	};
 

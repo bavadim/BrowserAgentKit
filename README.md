@@ -50,28 +50,17 @@ Create or update HTML inside the canvas.
 ];
 
 const agent = createAgent({
-  generate: async ({ messages, tools, signal }) => {
-    const response = await client.chat.completions.create(
+  generate: ({ messages, tools, signal }) =>
+    client.responses.create(
       {
         model: "gpt-4.1-mini",
-        messages,
+        input: messages,
         tools,
         tool_choice: tools?.length ? "auto" : undefined,
+        stream: true,
       },
       signal ? { signal } : undefined
-    );
-    const message = response.choices?.[0]?.message;
-    const toolCalls = Array.isArray(message?.tool_calls)
-      ? message.tool_calls
-          .map((call) =>
-            call?.function?.name
-              ? { id: call.id, name: call.function.name, args: call.function.arguments ?? "{}" }
-              : null
-          )
-          .filter((call): call is { id?: string; name: string; args: string } => call !== null)
-      : [];
-    return { message: message?.content ?? undefined, toolCalls, raw: response };
-  },
+    ),
   viewRoot: document.getElementById("canvas"),
   skills,
   tools: [
@@ -86,6 +75,8 @@ for await (const ev of agent.run("Create a hero section on the canvas")) {
   console.log(ev);
 }
 ```
+
+`generate` must return an `AsyncIterable` of streaming events (e.g., from `client.responses.create({ stream: true })`).
 
 ## Skills
 

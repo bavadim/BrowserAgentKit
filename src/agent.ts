@@ -1,14 +1,18 @@
-import type { ChatCompletionTool } from "openai/resources/chat/completions";
+import { AgentStatusKind, StreamingEventType } from "./types";
 import type {
+	AgentEvent,
 	AgentOptions,
 	AgentRunner,
-	AgentEvent,
-	ModelMessage,
-	ModelResponse,
+	AgentStatus,
+	GenerateRequest,
+	Message,
 	RunOptions,
 	Skill,
+	StreamingEvent,
 	Tool,
+	ToolCall,
 	ToolContext,
+	ToolDefinition,
 	ToolSchema,
 } from "./types";
 
@@ -74,7 +78,7 @@ function resolveBrowserContext(options: AgentOptions, runOptions: RunOptions): T
 	};
 }
 
-function toOpenAITools(tools: ToolSchema[]): ChatCompletionTool[] | undefined {
+function toOpenAITools(tools: ToolSchema[]): ToolDefinition[] | undefined {
 	if (tools.length === 0) {
 		return undefined;
 	}
@@ -88,6 +92,43 @@ function toOpenAITools(tools: ToolSchema[]): ChatCompletionTool[] | undefined {
 	}));
 }
 
+function buildStatus(kind: AgentStatusKind, toolName?: string): AgentStatus {
+	let label: string | undefined;
+	if (kind === AgentStatusKind.Thinking) {
+		label = "Thinking...";
+	} else if (kind === AgentStatusKind.CallingTool) {
+		label = toolName ? `Calling ${toolName}...` : "Calling tool...";
+	} else if (kind === AgentStatusKind.ToolResult) {
+		label = toolName ? `Received ${toolName} result.` : "Received tool result.";
+	} else if (kind === AgentStatusKind.Done) {
+		label = "Done.";
+	} else if (kind === AgentStatusKind.Error) {
+		label = "Error.";
+	}
+	return { kind, label, toolName };
+}
+
+function statusKey(status: AgentStatus): string {
+	return `${status.kind}:${status.toolName ?? ""}`;
+}
+
+function appendToolCallsMessage(messages: Message[], toolCalls: ToolCall[]): void {
+	const toolCallsPayload = toolCalls.map((call, index) => ({
+		id: call.id ?? `tool-call-${index + 1}`,
+		type: "function" as const,
+		function: {
+			name: call.name,
+			arguments: serializeToolArgs(call.args),
+		},
+	}));
+
+	messages.push({
+		role: "assistant",
+		content: null,
+		tool_calls: toolCallsPayload,
+	});
+}
+
 export function createAgent(options: AgentOptions): AgentRunner {
 	const skills = options.skills ?? [];
 	const tools = options.tools ?? [];
@@ -96,7 +137,7 @@ export function createAgent(options: AgentOptions): AgentRunner {
 
 	async function* run(input: string, runOptions: RunOptions = {}): AsyncGenerator<AgentEvent, void, void> {
 		const baseContext = resolveBrowserContext(options, runOptions);
-		const messages: ModelMessage[] = [];
+		const messages: Message[] = [];
 		const systemPrompt = buildSystemPrompt(skills);
 		if (systemPrompt) {
 			messages.push({ role: "system", content: systemPrompt });
@@ -110,40 +151,97 @@ export function createAgent(options: AgentOptions): AgentRunner {
 		}));
 
 		let step = 0;
+		let lastStatusKey: string | null = null;
+
 		while (step < maxSteps) {
 			step += 1;
-			let response: ModelResponse;
+			const toolCalls: ToolCall[] = [];
+			const toolArgBuffers = new Map<string, string>();
+			let textBuffer = "";
+			let finalText: string | null = null;
+
+			const request: GenerateRequest = {
+				messages,
+				tools: toOpenAITools(toolSchemas),
+				signal: runOptions.signal,
+			};
+
+			const emitStatus = (status: AgentStatus) => {
+				const key = statusKey(status);
+				if (key !== lastStatusKey) {
+					lastStatusKey = key;
+					return { type: "status", status } as const;
+				}
+				return null;
+			};
+
+			let streamError: unknown = null;
 			try {
-				response = await options.generate({
-					messages,
-					tools: toOpenAITools(toolSchemas),
-					signal: runOptions.signal,
-				});
+				for await (const event of options.generate(request)) {
+					switch (event.type) {
+						case StreamingEventType.ResponseQueued:
+						case StreamingEventType.ResponseCreated:
+						case StreamingEventType.ResponseInProgress: {
+							const status = emitStatus(buildStatus(AgentStatusKind.Thinking));
+							if (status) {
+								yield status;
+							}
+							break;
+						}
+						case StreamingEventType.ResponseOutputTextDelta: {
+							textBuffer += event.delta;
+							yield { type: "message.delta", delta: event.delta };
+							break;
+						}
+						case StreamingEventType.ResponseOutputTextDone: {
+							finalText = event.text;
+							break;
+						}
+						case StreamingEventType.ResponseFunctionCallArgumentsDelta: {
+							const existing = toolArgBuffers.get(event.item_id) ?? "";
+							toolArgBuffers.set(event.item_id, existing + event.delta);
+							break;
+						}
+						case StreamingEventType.ResponseFunctionCallArgumentsDone: {
+							const args = event.arguments ?? toolArgBuffers.get(event.item_id) ?? "";
+							if (event.name) {
+								toolCalls.push({ id: event.item_id, name: event.name, args });
+								const status = emitStatus(buildStatus(AgentStatusKind.CallingTool, event.name));
+								if (status) {
+									yield status;
+								}
+							}
+							break;
+						}
+						case StreamingEventType.ResponseFailed: {
+							streamError = event.error ?? new Error("Response failed");
+							break;
+						}
+						case StreamingEventType.Error: {
+							streamError = event.error;
+							break;
+						}
+						case StreamingEventType.ResponseCompleted:
+						default:
+							break;
+					}
+				}
 			} catch (error) {
-				yield { type: "error", error };
+				streamError = error;
+			}
+
+			if (streamError) {
+				yield { type: "error", error: streamError };
+				const status = emitStatus(buildStatus(AgentStatusKind.Error));
+				if (status) {
+					yield status;
+				}
 				break;
 			}
 
-			const toolCalls = response.toolCalls ?? [];
 			if (toolCalls.length > 0) {
-				const enrichedToolCalls = toolCalls.map((call, index) => ({
-					id: call.id ?? `tool-call-${index + 1}`,
-					name: call.name,
-					args: call.args,
-				}));
-				messages.push({
-					role: "assistant",
-					content: null,
-					tool_calls: enrichedToolCalls.map((call) => ({
-						id: call.id,
-						type: "function",
-						function: {
-							name: call.name,
-							arguments: serializeToolArgs(call.args),
-						},
-					})),
-				});
-				for (const call of enrichedToolCalls) {
+				appendToolCallsMessage(messages, toolCalls);
+				for (const call of toolCalls) {
 					const tool = toolMap.get(call.name);
 					if (!tool) {
 						const error = new Error(`Unknown tool: ${call.name}`);
@@ -151,12 +249,16 @@ export function createAgent(options: AgentOptions): AgentRunner {
 						messages.push({
 							role: "tool",
 							content: JSON.stringify({ error: error.message }),
-							tool_call_id: call.id,
+							tool_call_id: call.id ?? "tool-call",
 						});
 						continue;
 					}
 
 					const args = normalizeToolArgs(call.args);
+					const status = emitStatus(buildStatus(AgentStatusKind.CallingTool, call.name));
+					if (status) {
+						yield status;
+					}
 					yield { type: "tool.start", name: call.name, args };
 					try {
 						const result = await tool.run(args, baseContext);
@@ -164,23 +266,36 @@ export function createAgent(options: AgentOptions): AgentRunner {
 						messages.push({
 							role: "tool",
 							content: JSON.stringify(result ?? null),
-							tool_call_id: call.id,
+							tool_call_id: call.id ?? "tool-call",
 						});
+						const toolResultStatus = emitStatus(buildStatus(AgentStatusKind.ToolResult, call.name));
+						if (toolResultStatus) {
+							yield toolResultStatus;
+						}
 					} catch (error) {
 						yield { type: "error", error };
 						messages.push({
 							role: "tool",
 							content: JSON.stringify({ error: String(error) }),
-							tool_call_id: call.id,
+							tool_call_id: call.id ?? "tool-call",
 						});
+						const errorStatus = emitStatus(buildStatus(AgentStatusKind.Error, call.name));
+						if (errorStatus) {
+							yield errorStatus;
+						}
 					}
 				}
 				continue;
 			}
 
-			if (response.message) {
-				messages.push({ role: "assistant", content: response.message });
-				yield { type: "message", content: response.message };
+			const finalContent = finalText ?? textBuffer;
+			if (finalContent) {
+				messages.push({ role: "assistant", content: finalContent });
+				yield { type: "message", content: finalContent };
+				const doneStatus = emitStatus(buildStatus(AgentStatusKind.Done));
+				if (doneStatus) {
+					yield doneStatus;
+				}
 				break;
 			}
 

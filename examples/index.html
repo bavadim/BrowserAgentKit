@@ -126,6 +126,35 @@
         border: 1px solid #e5e7eb;
         margin: 10px 0 0;
       }
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.95rem;
+        color: #6b7280;
+        margin-top: 8px;
+      }
+      .status.hidden {
+        display: none;
+      }
+      .status .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #f59e0b;
+        animation: pulse 1s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0% {
+          opacity: 0.4;
+        }
+        50% {
+          opacity: 1;
+        }
+        100% {
+          opacity: 0.4;
+        }
+      }
       @media (max-width: 900px) {
         .app {
           grid-template-columns: 1fr;
@@ -162,6 +191,10 @@
         <textarea id="prompt" rows="3">Create a hero section with a title and a button.</textarea>
 
         <button id="runBtn">Send</button>
+        <div id="status" class="status hidden">
+          <span class="dot"></span>
+          <span id="statusText"></span>
+        </div>
 
         <details>
           <summary>Events</summary>
