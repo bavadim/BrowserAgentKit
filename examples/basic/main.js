@@ -1,12 +1,5 @@
-import { createAgent } from "@browser-agent-kit/core";
-import { BrowserRuntime } from "@browser-agent-kit/runtime-browser";
-import {
-  localStoreTool,
-  domXpathTool,
-  domPatchTool,
-} from "@browser-agent-kit/tools-web";
-import { mcpTool } from "@browser-agent-kit/mcp";
-import { OpenAIModel } from "@browser-agent-kit/model-bridge";
+import { createAgent, OpenAIModel } from "@browser-agent-kit/core";
+import { jsInterpreterTool, localStoreTool } from "@browser-agent-kit/tools-web";
 
 const logEl = document.getElementById("log");
 const runBtn = document.getElementById("runBtn");
@@ -38,19 +31,19 @@ function addMessage(role, text) {
 
 const skills = [
   {
-    name: "scrape.storeTitle",
-    description: "Finds page title and stores it in LocalStore.",
+    name: "canvas.render",
+    description: "Renders HTML into the right-side canvas using the JS interpreter helpers.",
     promptMd: `
 # Goal
-Read the page title and store it to LocalStore.
+Create or update HTML inside the canvas.
 
 # Steps
-1) Use DOM XPath tool to find the title (prefer //h1, fallback to <title>).
-2) Store result to LocalStore under key \`page:title\`.
-3) Return a short confirmation message.
+1) Use the JS interpreter. It provides \`x()\`, \`replaceSubtree()\`, \`diffSubtree()\`, and \`viewRoot\`.
+2) Build HTML as a string and call \`replaceSubtree(x("/")[0], html)\` to replace the canvas content.
+3) Keep the response short and confirm what changed.
 
 # Notes
-- Keep it deterministic and short.
+- The agent can only see the canvas subtree.
 `,
   },
 ];
@@ -76,22 +69,19 @@ runBtn.addEventListener("click", async () => {
   runBtn.disabled = true;
 
   const model = new OpenAIModel({
-    baseUrl,
-    key: apiKey || undefined,
+    baseURL: baseUrl,
+    apiKey: apiKey || undefined,
     model: "gpt-4.1-mini",
+    dangerouslyAllowBrowser: true,
   });
-
-  const runtime = new BrowserRuntime({ viewRoot: canvas });
 
   const agent = createAgent({
     model,
-    runtime,
+    viewRoot: canvas,
     skills,
     tools: [
+      jsInterpreterTool(),
       localStoreTool({ namespace: "bak" }),
-      domXpathTool(),
-      domPatchTool(),
-      mcpTool({ endpoint: "/mcp" }),
     ],
     policies: { maxSteps: 25 },
   });

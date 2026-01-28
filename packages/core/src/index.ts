@@ -1,3 +1,6 @@
+import OpenAI from "openai";
+import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
+
 export type JsonSchema = {
   type: string;
   properties?: Record<string, unknown>;
@@ -12,7 +15,10 @@ export type ToolSchema = {
 };
 
 export type ToolContext = {
-  runtime?: unknown;
+  viewRoot?: Element;
+  document?: Document;
+  window?: Window;
+  localStorage?: Storage;
   signal?: AbortSignal;
 };
 
@@ -69,7 +75,8 @@ export type AgentEvent =
 
 export type AgentOptions = {
   model: Model;
-  runtime?: unknown;
+  viewRoot?: Element;
+  context?: Partial<ToolContext>;
   skills?: Skill[];
   tools?: Tool[];
   policies?: AgentPolicies;
@@ -115,6 +122,21 @@ function normalizeToolArgs(args: unknown): unknown {
   }
 }
 
+function resolveBrowserContext(options: AgentOptions, runOptions: RunOptions): ToolContext {
+  const hasWindow = typeof window !== "undefined";
+  const viewRoot = options.viewRoot ?? options.context?.viewRoot;
+  const docFromRoot = viewRoot?.ownerDocument;
+
+  return {
+    viewRoot,
+    document: options.context?.document ?? docFromRoot ?? (hasWindow ? document : undefined),
+    window: options.context?.window ?? (hasWindow ? window : undefined),
+    localStorage:
+      options.context?.localStorage ?? (typeof localStorage !== "undefined" ? localStorage : undefined),
+    signal: runOptions.signal,
+  };
+}
+
 export function createAgent(options: AgentOptions) {
   const skills = options.skills ?? [];
   const tools = options.tools ?? [];
@@ -122,6 +144,7 @@ export function createAgent(options: AgentOptions) {
   const maxSteps = options.policies?.maxSteps ?? 25;
 
   async function* run(input: string, runOptions: RunOptions = {}): AsyncGenerator<AgentEvent> {
+    const baseContext = resolveBrowserContext(options, runOptions);
     const messages: ModelMessage[] = [];
     const systemPrompt = buildSystemPrompt(skills);
     if (systemPrompt) {
@@ -169,7 +192,7 @@ export function createAgent(options: AgentOptions) {
           const args = normalizeToolArgs(call.args);
           yield { type: "tool.start", name: call.name, args };
           try {
-            const result = await tool.run(args, { runtime: options.runtime, signal: runOptions.signal });
+            const result = await tool.run(args, baseContext);
             yield { type: "tool.end", name: call.name, result };
             messages.push({
               role: "tool",
@@ -203,4 +226,123 @@ export function createAgent(options: AgentOptions) {
   }
 
   return { run };
+}
+
+export type OpenAIModelOptions = {
+  apiKey?: string;
+  baseURL?: string;
+  model: string;
+  dangerouslyAllowBrowser?: boolean;
+  client?: OpenAI;
+};
+
+function toOpenAIMessages(messages: ModelMessage[]): ChatCompletionMessageParam[] {
+  return messages.map((msg) => {
+    if (msg.role === "tool") {
+      return {
+        role: "tool",
+        content: msg.content,
+        tool_call_id: msg.toolCallId ?? "tool-call",
+      };
+    }
+    if (msg.role === "assistant") {
+      return {
+        role: "assistant",
+        content: msg.content,
+        name: msg.name,
+      };
+    }
+    if (msg.role === "system") {
+      return {
+        role: "system",
+        content: msg.content,
+        name: msg.name,
+      };
+    }
+    return {
+      role: "user",
+      content: msg.content,
+      name: msg.name,
+    };
+  });
+}
+
+function toOpenAITools(tools: ToolSchema[] | undefined): ChatCompletionTool[] | undefined {
+  if (!tools || tools.length === 0) {
+    return undefined;
+  }
+  return tools.map((tool) => ({
+    type: "function" as const,
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters ?? { type: "object" },
+    },
+  }));
+}
+
+function fromOpenAIToolCalls(raw: unknown): ToolCall[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw
+    .map((call) => {
+      if (!call || typeof call !== "object") {
+        return null;
+      }
+      const callObj = call as {
+        id?: string;
+        function?: { name?: string; arguments?: string };
+      };
+      const name = callObj.function?.name;
+      if (!name) {
+        return null;
+      }
+      return {
+        id: callObj.id,
+        name,
+        args: callObj.function?.arguments ?? "{}",
+      } as ToolCall;
+    })
+    .filter((call): call is ToolCall => call !== null);
+}
+
+export class OpenAIModel implements Model {
+  private client: OpenAI;
+  private model: string;
+
+  constructor(options: OpenAIModelOptions) {
+    this.client =
+      options.client ??
+      new OpenAI({
+        apiKey: options.apiKey,
+        baseURL: options.baseURL,
+        dangerouslyAllowBrowser: options.dangerouslyAllowBrowser ?? true,
+      });
+    this.model = options.model;
+  }
+
+  async generate(req: ModelRequest): Promise<ModelResponse> {
+    const response = await this.client.chat.completions.create(
+      {
+        model: this.model,
+        messages: toOpenAIMessages(req.messages),
+        tools: toOpenAITools(req.tools),
+        tool_choice: req.tools?.length ? "auto" : undefined,
+      },
+      req.signal ? { signal: req.signal } : undefined
+    );
+
+    const message = response.choices?.[0]?.message;
+    if (!message) {
+      return { raw: response };
+    }
+
+    const toolCalls = fromOpenAIToolCalls(message.tool_calls);
+    return {
+      message: message.content ?? undefined,
+      toolCalls,
+      raw: response,
+    };
+  }
 }

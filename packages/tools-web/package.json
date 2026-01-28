@@ -15,7 +15,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/generate-descriptions.mjs && tsc -p tsconfig.json",
     "test": "node -e \"console.warn('no tests');\""
   },
   "dependencies": {

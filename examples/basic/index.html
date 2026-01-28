@@ -136,10 +136,8 @@
       {
         "imports": {
           "@browser-agent-kit/core": "../../packages/core/dist/index.js",
-          "@browser-agent-kit/runtime-browser": "../../packages/runtime-browser/dist/index.js",
           "@browser-agent-kit/tools-web": "../../packages/tools-web/dist/index.js",
-          "@browser-agent-kit/mcp": "../../packages/mcp/dist/index.js",
-          "@browser-agent-kit/model-bridge": "../../packages/model-bridge/dist/index.js"
+          "openai": "../../node_modules/openai/index.mjs"
         }
       }
     </script>
@@ -152,7 +150,7 @@
 
         <details open>
           <summary>Connection</summary>
-          <label for="baseUrl">Model endpoint</label>
+          <label for="baseUrl">Model base URL (OpenAI-compatible)</label>
           <input id="baseUrl" value="/api/llm" />
 
           <label for="apiKey">API key (optional)</label>

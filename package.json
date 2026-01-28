@@ -19,7 +19,8 @@
   "license": "SEE LICENSE IN LICENSE.md",
   "author": "bavadim@gmail.com",
   "workspaces": [
-    "packages/*"
+    "packages/core",
+    "packages/tools-web"
   ],
   "scripts": {
     "build": "npm -ws run build",

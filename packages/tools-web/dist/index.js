@@ -1,18 +1,24 @@
-function getDocument(runtime) {
-    return runtime?.document ?? runtime?.viewRoot?.ownerDocument ?? document;
+import { jsInterpreterDescription } from "./descriptions";
+function ensureDocument(runtime) {
+    const doc = runtime?.document ??
+        runtime?.viewRoot?.ownerDocument ??
+        (typeof document !== "undefined" ? document : undefined);
+    if (!doc) {
+        throw new Error("No document available in this environment.");
+    }
+    return doc;
 }
 function getStorage(runtime) {
     if (runtime?.localStorage) {
         return runtime.localStorage;
     }
+    if (typeof localStorage === "undefined") {
+        throw new Error("No localStorage available in this environment.");
+    }
     return localStorage;
 }
-function getViewRoot(runtime) {
-    if (runtime?.viewRoot) {
-        return { root: runtime.viewRoot, doc: runtime.viewRoot.ownerDocument ?? document };
-    }
-    const doc = getDocument(runtime);
-    return { root: doc, doc };
+function getViewRoot(doc, runtime) {
+    return runtime?.viewRoot ?? doc;
 }
 function scopeXpath(xpath, root) {
     const trimmed = xpath.trim();
@@ -27,32 +33,120 @@ function scopeXpath(xpath, root) {
     }
     return trimmed;
 }
-function xpathForNode(node, root) {
-    if (root && node === root) {
-        return "/";
+function resolveNode(target, helpers) {
+    if (!target) {
+        return null;
     }
-    if (node.nodeType === Node.DOCUMENT_NODE) {
-        return "/";
+    if (target instanceof Node) {
+        return target;
     }
-    if (!node.parentNode || node.nodeType !== Node.ELEMENT_NODE) {
+    if (Array.isArray(target)) {
+        const first = target.find((item) => item instanceof Node);
+        return first ?? null;
+    }
+    if (typeof target === "string") {
+        return helpers.x(target)[0] ?? null;
+    }
+    return null;
+}
+function nodeToString(node) {
+    if (!node) {
         return "";
     }
-    const element = node;
-    const parent = node.parentNode;
-    const siblings = Array.from(parent.children).filter((sibling) => sibling.tagName === element.tagName);
-    const index = siblings.indexOf(element) + 1;
-    const parentPath = xpathForNode(parent, root);
-    const tag = element.tagName.toLowerCase();
-    const segment = siblings.length > 1 ? `${tag}[${index}]` : tag;
-    if (!parentPath || parentPath === "/") {
-        return `/${segment}`;
+    if (node.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+        return Array.from(node.childNodes)
+            .map((child) => nodeToString(child))
+            .join("");
     }
-    return `${parentPath}/${segment}`;
+    if (node.nodeType === Node.DOCUMENT_NODE) {
+        const doc = node;
+        return doc.documentElement?.outerHTML ?? "";
+    }
+    if (node.nodeType === Node.ELEMENT_NODE) {
+        return node.outerHTML;
+    }
+    return node.textContent ?? "";
+}
+function createInterpreterHelpers(runtime) {
+    const doc = ensureDocument(runtime);
+    const root = getViewRoot(doc, runtime);
+    const win = runtime?.window ?? (typeof window !== "undefined" ? window : undefined);
+    const winAny = win;
+    const jq = winAny?.$ ?? winAny?.jQuery;
+    function x(xpath, rootOverride) {
+        let baseRoot = root;
+        if (rootOverride) {
+            if (rootOverride instanceof Node) {
+                baseRoot = rootOverride;
+            }
+            else if (Array.isArray(rootOverride)) {
+                const first = rootOverride.find((item) => item instanceof Node);
+                if (first) {
+                    baseRoot = first;
+                }
+            }
+            else if (typeof rootOverride === "string") {
+                const resolved = resolveNode(rootOverride, { x });
+                if (resolved) {
+                    baseRoot = resolved;
+                }
+            }
+        }
+        const scoped = scopeXpath(xpath, baseRoot);
+        const result = doc.evaluate(scoped, baseRoot, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+        const nodes = [];
+        for (let i = 0; i < result.snapshotLength; i += 1) {
+            const node = result.snapshotItem(i);
+            if (node) {
+                nodes.push(node);
+            }
+        }
+        return nodes;
+    }
+    function replaceSubtree(target, next) {
+        const resolvedTarget = resolveNode(target, { x });
+        if (!resolvedTarget) {
+            throw new Error("replaceSubtree: target not found.");
+        }
+        let replacement;
+        if (next instanceof Node) {
+            replacement = next;
+        }
+        else if (typeof next === "string") {
+            const template = doc.createElement("template");
+            template.innerHTML = next;
+            replacement = template.content;
+        }
+        else {
+            replacement = doc.createTextNode(String(next ?? ""));
+        }
+        resolvedTarget.replaceWith(replacement);
+        return replacement;
+    }
+    function diffSubtree(a, b) {
+        const nodeA = resolveNode(a, { x });
+        const nodeB = resolveNode(b, { x });
+        const equal = nodeA && nodeB ? nodeA.isEqualNode(nodeB) : nodeA === nodeB;
+        return {
+            equal,
+            before: nodeToString(nodeA),
+            after: nodeToString(nodeB),
+        };
+    }
+    return {
+        x,
+        replaceSubtree,
+        diffSubtree,
+        viewRoot: root,
+        document: doc,
+        window: win,
+        $: jq,
+    };
 }
 export function jsInterpreterTool() {
     return {
         name: "jsInterpreter",
-        description: "Run a JavaScript snippet and return its result.",
+        description: jsInterpreterDescription,
         parameters: {
             type: "object",
             properties: {
@@ -62,14 +156,17 @@ export function jsInterpreterTool() {
             required: ["code"],
             additionalProperties: false,
         },
-        async run(args) {
+        async run(args, ctx) {
             const { code, async } = args;
+            const helpers = createInterpreterHelpers(ctx);
             if (async) {
-                const fn = new Function(`return (async () => { ${code} })()`);
-                return await fn();
+                const fn = new Function("helpers", `const { x, replaceSubtree, diffSubtree, viewRoot, document, window, $ } = helpers;` +
+                    `return (async () => { ${code} })()`);
+                return await fn(helpers);
             }
-            const fn = new Function(`return (function () { ${code} })()`);
-            return fn();
+            const fn = new Function("helpers", `const { x, replaceSubtree, diffSubtree, viewRoot, document, window, $ } = helpers;` +
+                `return (function () { ${code} })()`);
+            return fn(helpers);
         },
     };
 }
@@ -90,7 +187,7 @@ export function localStoreTool(options = {}) {
         },
         run(args, ctx) {
             const { op, key, value } = args;
-            const storage = getStorage(ctx.runtime);
+            const storage = getStorage(ctx);
             switch (op) {
                 case "get": {
                     if (!key) {
@@ -128,104 +225,6 @@ export function localStoreTool(options = {}) {
                 default:
                     throw new Error(`Unknown localStore op: ${op}`);
             }
-        },
-    };
-}
-export function domXpathTool() {
-    return {
-        name: "domXpath",
-        description: "Search DOM nodes using an XPath expression (scoped to viewRoot when provided).",
-        parameters: {
-            type: "object",
-            properties: {
-                xpath: { type: "string", description: "XPath expression (e.g. //h1)." },
-                limit: { type: "number", description: "Max number of nodes to return." },
-            },
-            required: ["xpath"],
-            additionalProperties: false,
-        },
-        run(args, ctx) {
-            const { xpath, limit } = args;
-            const { root, doc } = getViewRoot(ctx.runtime);
-            const scoped = scopeXpath(xpath, root);
-            const result = doc.evaluate(scoped, root, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-            const nodes = [];
-            const max = limit ?? result.snapshotLength;
-            for (let i = 0; i < result.snapshotLength && nodes.length < max; i += 1) {
-                const node = result.snapshotItem(i);
-                if (!node) {
-                    continue;
-                }
-                if (node.nodeType === Node.ELEMENT_NODE) {
-                    const element = node;
-                    const attrs = {};
-                    for (const attr of Array.from(element.attributes)) {
-                        attrs[attr.name] = attr.value;
-                    }
-                    nodes.push({
-                        xpath: xpathForNode(element, root),
-                        text: element.textContent ?? undefined,
-                        attrs,
-                    });
-                }
-                else {
-                    nodes.push({ xpath: xpathForNode(node, root), text: node.textContent ?? undefined });
-                }
-            }
-            return nodes;
-        },
-    };
-}
-export function domPatchTool() {
-    return {
-        name: "domPatch",
-        description: "Apply a simple patch to a DOM node located by XPath (scoped to viewRoot when provided).",
-        parameters: {
-            type: "object",
-            properties: {
-                xpath: { type: "string" },
-                action: { type: "string", description: "setText | setHtml | setAttr | remove | appendHtml" },
-                text: { type: "string" },
-                html: { type: "string" },
-                attrName: { type: "string" },
-                attrValue: { type: "string" },
-            },
-            required: ["xpath", "action"],
-            additionalProperties: false,
-        },
-        run(args, ctx) {
-            const { xpath, action, text, html, attrName, attrValue } = args;
-            const { root, doc } = getViewRoot(ctx.runtime);
-            const scoped = scopeXpath(xpath, root);
-            const result = doc.evaluate(scoped, root, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-            const node = result.singleNodeValue;
-            if (!node || node.nodeType !== Node.ELEMENT_NODE) {
-                throw new Error(`No element found for xpath: ${xpath}`);
-            }
-            const element = node;
-            switch (action) {
-                case "setText":
-                    element.textContent = text ?? "";
-                    break;
-                case "setHtml":
-                    element.innerHTML = html ?? "";
-                    break;
-                case "appendHtml":
-                    element.insertAdjacentHTML("beforeend", html ?? "");
-                    break;
-                case "setAttr":
-                    if (!attrName) {
-                        throw new Error("domPatch.setAttr requires attrName");
-                    }
-                    element.setAttribute(attrName, attrValue ?? "");
-                    break;
-                case "remove":
-                    element.remove();
-                    break;
-                default:
-                    throw new Error(`Unknown domPatch action: ${action}`);
-            }
-            return { ok: true };
         },
     };
 }

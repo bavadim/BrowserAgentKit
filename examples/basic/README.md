@@ -16,3 +16,4 @@ Then open http://localhost:5173/examples/basic/ in your browser.
 - The demo expects an LLM proxy at `/api/llm` (or replace the URL in the form).
 - Avoid pasting personal API keys into the browser; prefer a backend proxy.
 - The agent tools are scoped to the right-hand canvas via `viewRoot`, so DOM tools can see only that container.
+- The demo uses the OpenAI SDK via an import map entry that points to `node_modules/openai/index.mjs`.

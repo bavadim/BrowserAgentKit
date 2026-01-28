@@ -1,3 +1,4 @@
+import OpenAI from "openai";
 export type JsonSchema = {
     type: string;
     properties?: Record<string, unknown>;
@@ -10,7 +11,10 @@ export type ToolSchema = {
     parameters?: JsonSchema;
 };
 export type ToolContext = {
-    runtime?: unknown;
+    viewRoot?: Element;
+    document?: Document;
+    window?: Window;
+    localStorage?: Storage;
     signal?: AbortSignal;
 };
 export type Tool = ToolSchema & {
@@ -71,7 +75,8 @@ export type AgentEvent = {
 };
 export type AgentOptions = {
     model: Model;
-    runtime?: unknown;
+    viewRoot?: Element;
+    context?: Partial<ToolContext>;
     skills?: Skill[];
     tools?: Tool[];
     policies?: AgentPolicies;
@@ -82,4 +87,17 @@ export type RunOptions = {
 export declare function createAgent(options: AgentOptions): {
     run: (input: string, runOptions?: RunOptions) => AsyncGenerator<AgentEvent>;
 };
+export type OpenAIModelOptions = {
+    apiKey?: string;
+    baseURL?: string;
+    model: string;
+    dangerouslyAllowBrowser?: boolean;
+    client?: OpenAI;
+};
+export declare class OpenAIModel implements Model {
+    private client;
+    private model;
+    constructor(options: OpenAIModelOptions);
+    generate(req: ModelRequest): Promise<ModelResponse>;
+}
 //# sourceMappingURL=index.d.ts.map

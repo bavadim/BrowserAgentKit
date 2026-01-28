@@ -8,49 +8,40 @@ Implemented:
 - tools:
   - JS interpreter
   - LocalStore (persistent KV)
-  - DOM XPath search + DOM patching
-  - MCP tool calling
+  - DOM helpers inside the interpreter (XPath + subtree helpers)
 
 The agent API is an **async generator**: you send a text request and consume streamed events.
 
 ## Install
 
 ```bash
-npm i @browser-agent-kit/core @browser-agent-kit/runtime-browser @browser-agent-kit/tools-web @browser-agent-kit/mcp
-# + your model adapter package (or your own)
-````
+npm i @browser-agent-kit/core @browser-agent-kit/tools-web
+```
 
 ## Quick start
 
 ```ts
-import { createAgent } from "@browser-agent-kit/core";
-import { BrowserRuntime } from "@browser-agent-kit/runtime-browser";
-import {
-  jsInterpreterTool,
-  localStoreTool,
-  domXpathTool,
-  domPatchTool,
-} from "@browser-agent-kit/tools-web";
-import { mcpTool } from "@browser-agent-kit/mcp";
-import { OpenAIModel } from "@browser-agent-kit/model-bridge";
+import { createAgent, OpenAIModel } from "@browser-agent-kit/core";
+import { jsInterpreterTool, localStoreTool } from "@browser-agent-kit/tools-web";
 
 const model = new OpenAIModel({
-  baseUrl: "/api/llm", // your backend proxy
-  key: "sk-...", # DANGERUS! DO NOT PASS YOUR OWN KEY
+  baseURL: "/api/llm", // your backend proxy
+  apiKey: "sk-...", // DANGEROUS! DO NOT PASS YOUR OWN KEY
   model: "gpt-4.1-mini",
+  dangerouslyAllowBrowser: true,
 });
 
 const skills = [
   {
-    name: "scrape.storeTitle",
-    description: "Finds page title and stores it in LocalStore.",
+    name: "canvas.render",
+    description: "Renders HTML inside the canvas using the JS interpreter helpers.",
     promptMd: `
 # Goal
-Read the page title and store it to LocalStore.
+Create or update HTML inside the canvas.
 
 # Steps
-1) Use DOM XPath tool to find the title (prefer //h1, fallback to <title>).
-2) Store result to LocalStore under key \`page:title\`.
+1) Use the JS interpreter helpers: \`x()\`, \`replaceSubtree()\`, and \`viewRoot\`.
+2) Build HTML as a string and call \`replaceSubtree(x("/")[0], html)\`.
 3) Return a short confirmation message.
 
 # Notes
@@ -61,19 +52,16 @@ Read the page title and store it to LocalStore.
 
 const agent = createAgent({
   model,
-  runtime: new BrowserRuntime(),
+  viewRoot: document.getElementById("canvas"),
   skills,
   tools: [
     jsInterpreterTool(),
     localStoreTool({ namespace: "bak" }),
-    domXpathTool(),
-    domPatchTool(),
-    mcpTool({ endpoint: "/mcp" }),
   ],
   policies: { maxSteps: 25 },
 });
 
-for await (const ev of agent.run("Store the current page title in LocalStore")) {
+for await (const ev of agent.run("Create a hero section on the canvas")) {
   // handle events in your UI / logs
   console.log(ev);
 }
@@ -107,27 +95,8 @@ The agent selects and executes skills inside the agent loop.
 
 ## Tools
 
-A tool is a JavaScript function plus **JSDoc** documentation (the most common JS/TS documentation style).
-BrowserAgentKit uses the JSDoc text (and the TS types) to build tool documentation for the agent.
-
-Example shape:
-
-```ts
-/**
- * Search DOM nodes using an XPath expression.
- *
- * @param args.xpath XPath expression (e.g. "//h1")
- * @param args.limit Max number of nodes to return.
- * @returns Matched nodes with minimal metadata (text, attributes, xpath).
- */
-export async function domXpath(args: {
-  xpath: string;
-  limit?: number;
-}): Promise<Array<{ xpath: string; text?: string; attrs?: Record<string, string> }>> {
-  // implementation...
-  return [];
-}
-```
+A tool is a JavaScript function plus a **separate Markdown description** that is sent to the model.
+Keep the description in a dedicated `.md` file (see `packages/tools-web/descriptions/`).
 
 You don’t call tools directly: you **pass tools into the agent**, and the agent calls them when needed.
 
@@ -150,4 +119,3 @@ for await (const ev of agent.run("...")) {
   // update UI / state
 }
 ```
-
