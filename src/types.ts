@@ -1,4 +1,8 @@
-import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
+import type {
+	EasyInputMessage,
+	ResponseInputItem,
+	Tool as ResponseTool,
+} from "openai/resources/responses/responses";
 
 export type JsonSchema = {
 	type: string;
@@ -37,8 +41,8 @@ export type ToolCall = {
 	args: unknown;
 };
 
-export type Message = ChatCompletionMessageParam;
-export type ToolDefinition = ChatCompletionTool;
+export type Message = EasyInputMessage | ResponseInputItem;
+export type ToolDefinition = ResponseTool;
 
 export type GenerateRequest = {
 	messages: Message[];

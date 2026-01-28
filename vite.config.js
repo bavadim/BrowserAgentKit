@@ -14,6 +14,9 @@ export default defineConfig({
 			allow: [__dirname],
 		},
 	},
+	build: {
+		sourcemap: true,
+	},
 	resolve: {
 		alias: {
 			browseragentkit: path.resolve(__dirname, "src/index.ts"),

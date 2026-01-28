@@ -52,17 +52,6 @@ function normalizeToolArgs(args: unknown): unknown {
 	}
 }
 
-function serializeToolArgs(args: unknown): string {
-	if (typeof args === "string") {
-		return args;
-	}
-	try {
-		return JSON.stringify(args ?? {});
-	} catch {
-		return "{}";
-	}
-}
-
 function resolveBrowserContext(options: AgentOptions, runOptions: RunOptions): ToolContext {
 	const hasWindow = typeof window !== "undefined";
 	const viewRoot = options.viewRoot ?? options.context?.viewRoot;
@@ -83,12 +72,11 @@ function toOpenAITools(tools: ToolSchema[]): ToolDefinition[] | undefined {
 		return undefined;
 	}
 	return tools.map((tool) => ({
-		type: "function" as const,
-		function: {
-			name: tool.name,
-			description: tool.description,
-			parameters: tool.parameters ?? { type: "object" },
-		},
+		type: "function",
+		name: tool.name,
+		description: tool.description,
+		parameters: tool.parameters ?? { type: "object" },
+		strict: true,
 	}));
 }
 
@@ -112,20 +100,12 @@ function statusKey(status: AgentStatus): string {
 	return `${status.kind}:${status.toolName ?? ""}`;
 }
 
-function appendToolCallsMessage(messages: Message[], toolCalls: ToolCall[]): void {
-	const toolCallsPayload = toolCalls.map((call, index) => ({
-		id: call.id ?? `tool-call-${index + 1}`,
-		type: "function" as const,
-		function: {
-			name: call.name,
-			arguments: serializeToolArgs(call.args),
-		},
-	}));
-
+function addToolOutput(messages: Message[], callId: string, output: unknown): void {
+	const serialized = typeof output === "string" ? output : JSON.stringify(output ?? null);
 	messages.push({
-		role: "assistant",
-		content: null,
-		tool_calls: toolCallsPayload,
+		type: "function_call_output",
+		call_id: callId,
+		output: serialized,
 	});
 }
 
@@ -273,17 +253,12 @@ export function createAgent(options: AgentOptions): AgentRunner {
 				}
 
 				if (toolCalls.length > 0) {
-					appendToolCallsMessage(messages, toolCalls);
 					for (const call of toolCalls) {
 						const tool = toolMap.get(call.name);
 						if (!tool) {
 							const error = new Error(`Unknown tool: ${call.name}`);
 							yield { type: "error", error };
-							messages.push({
-								role: "tool",
-								content: JSON.stringify({ error: error.message }),
-								tool_call_id: call.id ?? "tool-call",
-							});
+							addToolOutput(messages, call.id ?? "tool-call", { error: error.message });
 							continue;
 						}
 
@@ -296,22 +271,14 @@ export function createAgent(options: AgentOptions): AgentRunner {
 						try {
 							const result = await tool.run(args, baseContext);
 							yield { type: "tool.end", name: call.name, result };
-							messages.push({
-								role: "tool",
-								content: JSON.stringify(result ?? null),
-								tool_call_id: call.id ?? "tool-call",
-							});
+							addToolOutput(messages, call.id ?? "tool-call", result ?? null);
 							const toolResultStatus = emitStatus(buildStatus(AgentStatusKind.ToolResult, call.name));
 							if (toolResultStatus) {
 								yield toolResultStatus;
 							}
 						} catch (error) {
 							yield { type: "error", error };
-							messages.push({
-								role: "tool",
-								content: JSON.stringify({ error: String(error) }),
-								tool_call_id: call.id ?? "tool-call",
-							});
+							addToolOutput(messages, call.id ?? "tool-call", { error: String(error) });
 							const errorStatus = emitStatus(buildStatus(AgentStatusKind.Error, call.name));
 							if (errorStatus) {
 								yield errorStatus;
