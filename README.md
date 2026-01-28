@@ -15,14 +15,13 @@ The agent API is an **async generator**: you send a text request and consume str
 ## Install
 
 ```bash
-npm i @browser-agent-kit/core @browser-agent-kit/tools-web
+npm i browseragentkit
 ```
 
 ## Quick start
 
 ```ts
-import { createAgent, OpenAIModel } from "@browser-agent-kit/core";
-import { jsInterpreterTool, localStoreTool } from "@browser-agent-kit/tools-web";
+import { createAgent, OpenAIModel, jsInterpreterTool, localStoreTool } from "browseragentkit";
 
 const model = new OpenAIModel({
   baseURL: "/api/llm", // your backend proxy
@@ -96,7 +95,7 @@ The agent selects and executes skills inside the agent loop.
 ## Tools
 
 A tool is a JavaScript function plus a **separate Markdown description** that is sent to the model.
-Keep the description in a dedicated `.md` file (see `packages/tools-web/descriptions/`).
+Keep the description in `src/descriptions.ts`.
 
 You don’t call tools directly: you **pass tools into the agent**, and the agent calls them when needed.
 

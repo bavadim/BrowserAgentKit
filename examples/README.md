@@ -10,7 +10,7 @@ npm run build
 python3 -m http.server 5173
 ```
 
-Then open http://localhost:5173/examples/basic/ in your browser.
+Then open http://localhost:5173/examples/ in your browser.
 
 ## Notes
 - The demo expects an LLM proxy at `/api/llm` (or replace the URL in the form).

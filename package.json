@@ -1,6 +1,18 @@
 {
   "name": "browseragentkit",
   "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "description": "A developer-friendly toolkit for building LLM agents that live and work inside web applications.",
   "keywords": [
     "code",
@@ -18,16 +30,15 @@
   },
   "license": "SEE LICENSE IN LICENSE.md",
   "author": "bavadim@gmail.com",
-  "workspaces": [
-    "packages/core",
-    "packages/tools-web"
-  ],
   "scripts": {
-    "build": "npm -ws run build",
-    "test": "npm run build && npm -ws --if-present run test",
-    "lint": "npm -ws --if-present run lint"
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --experimental-loader ./test/resolve-loader.mjs --test"
+  },
+  "dependencies": {
+    "openai": "^6.16.0"
   },
   "devDependencies": {
+    "jsdom": "^27.4.0",
     "typescript": "^5.9.3"
   }
 }

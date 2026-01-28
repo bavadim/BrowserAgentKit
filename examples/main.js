@@ -1,5 +1,4 @@
-import { createAgent, OpenAIModel } from "@browser-agent-kit/core";
-import { jsInterpreterTool, localStoreTool } from "@browser-agent-kit/tools-web";
+import { createAgent, OpenAIModel, jsInterpreterTool, localStoreTool } from "browseragentkit";
 
 const logEl = document.getElementById("log");
 const runBtn = document.getElementById("runBtn");
