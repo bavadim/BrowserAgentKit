@@ -14,7 +14,8 @@ This repo is a single package with a browser demo:
 - `npm run lint`: runs ESLint.
 
 ## Coding Style & Naming Conventions
-ESLint is configured; use **tabs** for indentation. Match existing examples in `README.md` and use clear, descriptive names (`createAgent`, `OpenAIModel`). Tool descriptions live near the tool definition in `src/index.ts`.
+ESLint is configured; use **tabs** for indentation. Match existing examples in `README.md` and use clear, descriptive names (`createAgent`, `OpenAIModel`). Tool descriptions live near the tool definition in `src/tools.ts`.
+Use explicit types on function signatures (args and return types). Helper functions should remain private inside their modules; do not create separate helper files.
 
 ## Testing Guidelines
 Tests live in `test/` and use Node’s built‑in test runner (`node --test`). If you add tests, keep them focused on public API behavior.
