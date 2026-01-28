@@ -35,7 +35,8 @@ import { mcpTool } from "@browser-agent-kit/mcp";
 import { OpenAIModel } from "@browser-agent-kit/model-bridge";
 
 const model = new OpenAIModel({
-  endpoint: "/api/llm", // your backend proxy
+  baseUrl: "/api/llm", // your backend proxy
+  key: "sk-...", # DANGERUS! DO NOT PASS YOUR OWN KEY
   model: "gpt-4.1-mini",
 });
 
