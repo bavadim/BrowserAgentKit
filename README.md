@@ -120,6 +120,16 @@ Keep the description near the tool definition (in `src/tools.ts`).
 
 You don’t call tools directly: you **pass tools into the agent**, and the agent calls them when needed.
 
+## Demo
+
+```bash
+npm install
+npm run build
+python3 -m http.server 5173
+```
+
+Then open http://localhost:5173/examples/ in your browser.
+
 ## Agent API (async generator)
 
 `agent.run(input: string)` returns an async generator of events.
