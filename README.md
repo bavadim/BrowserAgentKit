@@ -21,12 +21,12 @@ npm i browseragentkit
 ## Quick start
 
 ```ts
-import { createAgent, OpenAIModel, jsInterpreterTool, localStoreTool } from "browseragentkit";
+import OpenAI from "openai";
+import { createAgent, jsInterpreterTool, localStoreTool } from "browseragentkit";
 
-const model = new OpenAIModel({
+const client = new OpenAI({
   baseURL: "/api/llm", // your backend proxy
   apiKey: "sk-...", // DANGEROUS! DO NOT PASS YOUR OWN KEY
-  model: "gpt-4.1-mini",
   dangerouslyAllowBrowser: true,
 });
 
@@ -50,7 +50,28 @@ Create or update HTML inside the canvas.
 ];
 
 const agent = createAgent({
-  model,
+  generate: async ({ messages, tools, signal }) => {
+    const response = await client.chat.completions.create(
+      {
+        model: "gpt-4.1-mini",
+        messages,
+        tools,
+        tool_choice: tools?.length ? "auto" : undefined,
+      },
+      signal ? { signal } : undefined
+    );
+    const message = response.choices?.[0]?.message;
+    const toolCalls = Array.isArray(message?.tool_calls)
+      ? message.tool_calls
+          .map((call) =>
+            call?.function?.name
+              ? { id: call.id, name: call.function.name, args: call.function.arguments ?? "{}" }
+              : null
+          )
+          .filter((call): call is { id?: string; name: string; args: string } => call !== null)
+      : [];
+    return { message: message?.content ?? undefined, toolCalls, raw: response };
+  },
   viewRoot: document.getElementById("canvas"),
   skills,
   tools: [

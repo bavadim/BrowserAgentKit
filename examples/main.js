@@ -1,4 +1,5 @@
-import { createAgent, OpenAIModel, jsInterpreterTool, localStoreTool } from "browseragentkit";
+import OpenAI from "openai";
+import { createAgent, jsInterpreterTool, localStoreTool } from "browseragentkit";
 
 const logEl = document.getElementById("log");
 const runBtn = document.getElementById("runBtn");
@@ -67,15 +68,35 @@ runBtn.addEventListener("click", async () => {
 	addMessage("user", prompt);
 	runBtn.disabled = true;
 
-	const model = new OpenAIModel({
+	const client = new OpenAI({
 		baseURL: baseUrl,
 		apiKey: apiKey || undefined,
-		model: "gpt-4.1-mini",
 		dangerouslyAllowBrowser: true,
 	});
 
 	const agent = createAgent({
-		model,
+		generate: async ({ messages, tools, signal }) => {
+			const response = await client.chat.completions.create(
+				{
+					model: "gpt-4.1-mini",
+					messages,
+					tools,
+					tool_choice: tools?.length ? "auto" : undefined,
+				},
+				signal ? { signal } : undefined
+			);
+			const message = response.choices?.[0]?.message;
+			const toolCalls = Array.isArray(message?.tool_calls)
+				? message.tool_calls
+					.map((call) =>
+						call?.function?.name
+							? { id: call.id, name: call.function.name, args: call.function.arguments ?? "{}" }
+							: null
+					)
+					.filter((call) => call !== null)
+				: [];
+			return { message: message?.content ?? undefined, toolCalls, raw: response };
+		},
 		viewRoot: canvas,
 		skills,
 		tools: [

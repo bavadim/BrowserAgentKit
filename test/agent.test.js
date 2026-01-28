@@ -11,13 +11,9 @@ async function collectEvents(generator) {
 }
 
 test("agent returns a message", async () => {
-	const model = {
-		async generate() {
-			return { message: "hello" };
-		},
-	};
+	const generate = async () => ({ message: "hello" });
 
-	const agent = createAgent({ model });
+	const agent = createAgent({ generate });
 	const events = await collectEvents(agent.run("hi"));
 
 	const messageEvent = events.find((ev) => ev.type === "message");
@@ -27,22 +23,20 @@ test("agent returns a message", async () => {
 
 test("agent executes tools when requested", async () => {
 	let calls = 0;
-	const model = {
-		async generate() {
-			if (calls === 0) {
-				calls += 1;
-				return {
-					toolCalls: [
-						{
-							id: "call-1",
-							name: "echo",
-							args: { value: "ok" },
-						},
-					],
-				};
-			}
-			return { message: "done" };
-		},
+	const generate = async () => {
+		if (calls === 0) {
+			calls += 1;
+			return {
+				toolCalls: [
+					{
+						id: "call-1",
+						name: "echo",
+						args: { value: "ok" },
+					},
+				],
+			};
+		}
+		return { message: "done" };
 	};
 
 	const tool = {
@@ -59,7 +53,7 @@ test("agent executes tools when requested", async () => {
 		},
 	};
 
-	const agent = createAgent({ model, tools: [tool] });
+	const agent = createAgent({ generate, tools: [tool] });
 	const events = await collectEvents(agent.run("test"));
 
 	assert.ok(events.some((ev) => ev.type === "tool.start" && ev.name === "echo"));
@@ -69,25 +63,23 @@ test("agent executes tools when requested", async () => {
 
 test("agent emits error on unknown tool", async () => {
 	let calls = 0;
-	const model = {
-		async generate() {
-			if (calls === 0) {
-				calls += 1;
-				return {
-					toolCalls: [
-						{
-							id: "call-1",
-							name: "missing",
-							args: {},
-						},
-					],
-				};
-			}
-			return { message: "done" };
-		},
+	const generate = async () => {
+		if (calls === 0) {
+			calls += 1;
+			return {
+				toolCalls: [
+					{
+						id: "call-1",
+						name: "missing",
+						args: {},
+					},
+				],
+			};
+		}
+		return { message: "done" };
 	};
 
-	const agent = createAgent({ model, tools: [] });
+	const agent = createAgent({ generate, tools: [] });
 	const events = await collectEvents(agent.run("test"));
 
 	assert.ok(events.some((ev) => ev.type === "error"));
@@ -96,22 +88,20 @@ test("agent emits error on unknown tool", async () => {
 
 test("agent emits error when tool throws", async () => {
 	let calls = 0;
-	const model = {
-		async generate() {
-			if (calls === 0) {
-				calls += 1;
-				return {
-					toolCalls: [
-						{
-							id: "call-1",
-							name: "explode",
-							args: {},
-						},
-					],
-				};
-			}
-			return { message: "done" };
-		},
+	const generate = async () => {
+		if (calls === 0) {
+			calls += 1;
+			return {
+				toolCalls: [
+					{
+						id: "call-1",
+						name: "explode",
+						args: {},
+					},
+				],
+			};
+		}
+		return { message: "done" };
 	};
 
 	const tool = {
@@ -123,7 +113,7 @@ test("agent emits error when tool throws", async () => {
 		},
 	};
 
-	const agent = createAgent({ model, tools: [tool] });
+	const agent = createAgent({ generate, tools: [tool] });
 	const events = await collectEvents(agent.run("test"));
 
 	assert.ok(events.some((ev) => ev.type === "error"));
@@ -132,19 +122,17 @@ test("agent emits error when tool throws", async () => {
 
 test("agent stops after maxSteps", async () => {
 	let calls = 0;
-	const model = {
-		async generate() {
-			calls += 1;
-			return {
-				toolCalls: [
-					{
-						id: `call-${calls}`,
-						name: "noop",
-						args: {},
-					},
-				],
-			};
-		},
+	const generate = async () => {
+		calls += 1;
+		return {
+			toolCalls: [
+				{
+					id: `call-${calls}`,
+					name: "noop",
+					args: {},
+				},
+			],
+		};
 	};
 
 	const tool = {
@@ -156,7 +144,7 @@ test("agent stops after maxSteps", async () => {
 		},
 	};
 
-	const agent = createAgent({ model, tools: [tool], policies: { maxSteps: 2 } });
+	const agent = createAgent({ generate, tools: [tool], policies: { maxSteps: 2 } });
 	const events = await collectEvents(agent.run("test"));
 
 	assert.equal(calls, 2);
@@ -166,22 +154,20 @@ test("agent stops after maxSteps", async () => {
 
 test("agent parses JSON tool args", async () => {
 	let calls = 0;
-	const model = {
-		async generate() {
-			if (calls === 0) {
-				calls += 1;
-				return {
-					toolCalls: [
-						{
-							id: "call-1",
-							name: "echo",
-							args: JSON.stringify({ value: "ok" }),
-						},
-					],
-				};
-			}
-			return { message: "done" };
-		},
+	const generate = async () => {
+		if (calls === 0) {
+			calls += 1;
+			return {
+				toolCalls: [
+					{
+						id: "call-1",
+						name: "echo",
+						args: JSON.stringify({ value: "ok" }),
+					},
+				],
+			};
+		}
+		return { message: "done" };
 	};
 
 	const tool = {
@@ -193,7 +179,7 @@ test("agent parses JSON tool args", async () => {
 		},
 	};
 
-	const agent = createAgent({ model, tools: [tool] });
+	const agent = createAgent({ generate, tools: [tool] });
 	const events = await collectEvents(agent.run("test"));
 
 	const startEvent = events.find((ev) => ev.type === "tool.start");
@@ -202,22 +188,20 @@ test("agent parses JSON tool args", async () => {
 
 test("agent preserves non-JSON tool args", async () => {
 	let calls = 0;
-	const model = {
-		async generate() {
-			if (calls === 0) {
-				calls += 1;
-				return {
-					toolCalls: [
-						{
-							id: "call-1",
-							name: "echo",
-							args: "not json",
-						},
-					],
-				};
-			}
-			return { message: "done" };
-		},
+	const generate = async () => {
+		if (calls === 0) {
+			calls += 1;
+			return {
+				toolCalls: [
+					{
+						id: "call-1",
+						name: "echo",
+						args: "not json",
+					},
+				],
+			};
+		}
+		return { message: "done" };
 	};
 
 	const tool = {
@@ -229,7 +213,7 @@ test("agent preserves non-JSON tool args", async () => {
 		},
 	};
 
-	const agent = createAgent({ model, tools: [tool] });
+	const agent = createAgent({ generate, tools: [tool] });
 	const events = await collectEvents(agent.run("test"));
 
 	const startEvent = events.find((ev) => ev.type === "tool.start");
@@ -237,13 +221,11 @@ test("agent preserves non-JSON tool args", async () => {
 });
 
 test("agent reports model errors", async () => {
-	const model = {
-		async generate() {
-			throw new Error("model down");
-		},
+	const generate = async () => {
+		throw new Error("model down");
 	};
 
-	const agent = createAgent({ model });
+	const agent = createAgent({ generate });
 	const events = await collectEvents(agent.run("test"));
 
 	assert.ok(events.some((ev) => ev.type === "error"));

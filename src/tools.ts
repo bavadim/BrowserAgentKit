@@ -1,4 +1,4 @@
-import type { Tool, ToolContext } from "./agent";
+import type { Tool, ToolContext } from "./types";
 
 const jsInterpreterDescription = `# JavaScript Interpreter
 
