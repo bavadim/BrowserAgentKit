@@ -5,6 +5,20 @@ const logEl = document.getElementById("log");
 const runBtn = document.getElementById("runBtn");
 const chatLog = document.getElementById("chatLog");
 const canvas = document.getElementById("canvas");
+const baseUrlInput = document.getElementById("baseUrl");
+const apiKeyInput = document.getElementById("apiKey");
+const promptInput = document.getElementById("prompt");
+
+const params = new URLSearchParams(window.location.search);
+if (baseUrlInput && params.has("baseUrl")) {
+	baseUrlInput.value = params.get("baseUrl") ?? "";
+}
+if (apiKeyInput && params.has("apiKey")) {
+	apiKeyInput.value = params.get("apiKey") ?? "";
+}
+if (promptInput && params.has("message")) {
+	promptInput.value = params.get("message") ?? "";
+}
 
 function log(line) {
 	if (!logEl) {
@@ -57,9 +71,9 @@ runBtn.addEventListener("click", async () => {
 		logEl.textContent = "";
 	}
 
-	const baseUrl = document.getElementById("baseUrl").value.trim();
-	const apiKey = document.getElementById("apiKey").value.trim();
-	const prompt = document.getElementById("prompt").value.trim();
+	const baseUrl = baseUrlInput.value.trim();
+	const apiKey = apiKeyInput.value.trim();
+	const prompt = promptInput.value.trim();
 
 	if (!prompt) {
 		return;

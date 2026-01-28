@@ -10,6 +10,7 @@ This repo is a single package with a browser demo:
 ## Build, Test, and Development Commands
 - `npm install`: installs dependencies.
 - `npm run build`: builds the library to `dist/`.
+- `npm run dev`: runs the demo with hot reload (opens the browser).
 - `npm test`: builds and runs tests. The `--experimental-loader` warning during tests is expected and can be ignored.
 - `npm run lint`: runs ESLint.
 

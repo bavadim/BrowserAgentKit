@@ -130,6 +130,23 @@ python3 -m http.server 5173
 
 Then open http://localhost:5173/examples/ in your browser.
 
+### Dev (hot reload)
+
+```bash
+npm install
+npm run dev
+```
+
+Vite will open the demo and refresh on source changes.
+
+### URL presets
+
+You can prefill demo fields via query params:
+
+```
+?baseUrl=https://...&apiKey=sk-...&message=Hello
+```
+
 ## Agent API (async generator)
 
 `agent.run(input: string)` returns an async generator of events.

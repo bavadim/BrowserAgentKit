@@ -32,6 +32,7 @@
   "author": "bavadim@gmail.com",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "dev": "vite",
     "test": "npm run build && node --experimental-loader ./test/resolve-loader.mjs --test",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
@@ -44,6 +45,7 @@
     "eslint": "^9.10.0",
     "globals": "^15.9.0",
     "jsdom": "^27.4.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite": "^6.0.0"
   }
 }
