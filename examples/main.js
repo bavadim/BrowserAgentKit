@@ -20,13 +20,6 @@ if (promptInput && params.has("message")) {
 	promptInput.value = params.get("message") ?? "";
 }
 
-function log(line) {
-	if (!logEl) {
-		return;
-	}
-	logEl.textContent += `${line}\n`;
-}
-
 function addMessage(role, text) {
 	if (!chatLog) {
 		return;
@@ -122,29 +115,17 @@ runBtn.addEventListener("click", async () => {
 
 	try {
 		for await (const ev of agent.run(prompt)) {
-			log(JSON.stringify(ev, null, 2));
 			if (ev.type === "message") {
 				addMessage("assistant", ev.content);
 			}
 			if (ev.type === "error") {
-				if (ev.error instanceof Error) {
-					console.error(ev.error);
-				} else {
-					console.error(new Error(String(ev.error)));
-				}
-				if (ev.error && typeof ev.error === "object" && "stack" in ev.error && ev.error.stack) {
-					console.error(ev.error.stack);
-				}
-				addMessage("assistant", `Error: ${String(ev.error)}`);
+				console.error(JSON.stringify(ev.error));
+				addMessage("assistant", `${String(ev.error)}`);
 			}
 		}
 	} catch (error) {
-		if (error instanceof Error) {
-			console.error(error);
-		} else {
-			console.error(new Error(String(error)));
-		}
-		addMessage("assistant", `Error: ${String(error)}`);
+		addMessage("assistant", `${String(error)}`);
+		console.error(error);
 	} finally {
 		runBtn.disabled = false;
 	}
