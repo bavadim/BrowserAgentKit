@@ -1,0 +1,26 @@
+{
+  "name": "browseragentkit",
+  "version": "0.0.1",
+  "description": "A developer-friendly toolkit for building LLM agents that live and work inside web applications.",
+  "keywords": [
+    "code",
+    "agent",
+    "web",
+    "agent"
+  ],
+  "homepage": "https://github.com/bavadim/BrowserAgentKit#readme",
+  "bugs": {
+    "url": "https://github.com/bavadim/BrowserAgentKit/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bavadim/BrowserAgentKit.git"
+  },
+  "license": "SEE LICENSE IN LICENSE.md",
+  "author": "bavadim@gmail.com",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
