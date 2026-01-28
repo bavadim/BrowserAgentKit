@@ -19,6 +19,6 @@
     "test": "node --test"
   },
   "dependencies": {
-    "openai": "^4.56.0"
+    "openai": "^6.16.0"
   }
 }
