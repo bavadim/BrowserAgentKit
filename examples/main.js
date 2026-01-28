@@ -127,10 +127,23 @@ runBtn.addEventListener("click", async () => {
 				addMessage("assistant", ev.content);
 			}
 			if (ev.type === "error") {
+				if (ev.error instanceof Error) {
+					console.error(ev.error);
+				} else {
+					console.error(new Error(String(ev.error)));
+				}
+				if (ev.error && typeof ev.error === "object" && "stack" in ev.error && ev.error.stack) {
+					console.error(ev.error.stack);
+				}
 				addMessage("assistant", `Error: ${String(ev.error)}`);
 			}
 		}
 	} catch (error) {
+		if (error instanceof Error) {
+			console.error(error);
+		} else {
+			console.error(new Error(String(error)));
+		}
 		addMessage("assistant", `Error: ${String(error)}`);
 	} finally {
 		runBtn.disabled = false;

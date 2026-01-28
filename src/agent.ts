@@ -48,6 +48,17 @@ function normalizeToolArgs(args: unknown): unknown {
 	}
 }
 
+function serializeToolArgs(args: unknown): string {
+	if (typeof args === "string") {
+		return args;
+	}
+	try {
+		return JSON.stringify(args ?? {});
+	} catch {
+		return "{}";
+	}
+}
+
 function resolveBrowserContext(options: AgentOptions, runOptions: RunOptions): ToolContext {
 	const hasWindow = typeof window !== "undefined";
 	const viewRoot = options.viewRoot ?? options.context?.viewRoot;
@@ -115,7 +126,24 @@ export function createAgent(options: AgentOptions): AgentRunner {
 
 			const toolCalls = response.toolCalls ?? [];
 			if (toolCalls.length > 0) {
-				for (const call of toolCalls) {
+				const enrichedToolCalls = toolCalls.map((call, index) => ({
+					id: call.id ?? `tool-call-${index + 1}`,
+					name: call.name,
+					args: call.args,
+				}));
+				messages.push({
+					role: "assistant",
+					content: null,
+					tool_calls: enrichedToolCalls.map((call) => ({
+						id: call.id,
+						type: "function",
+						function: {
+							name: call.name,
+							arguments: serializeToolArgs(call.args),
+						},
+					})),
+				});
+				for (const call of enrichedToolCalls) {
 					const tool = toolMap.get(call.name);
 					if (!tool) {
 						const error = new Error(`Unknown tool: ${call.name}`);
@@ -123,7 +151,7 @@ export function createAgent(options: AgentOptions): AgentRunner {
 						messages.push({
 							role: "tool",
 							content: JSON.stringify({ error: error.message }),
-							tool_call_id: call.id ?? "tool-call",
+							tool_call_id: call.id,
 						});
 						continue;
 					}
@@ -136,14 +164,14 @@ export function createAgent(options: AgentOptions): AgentRunner {
 						messages.push({
 							role: "tool",
 							content: JSON.stringify(result ?? null),
-							tool_call_id: call.id ?? "tool-call",
+							tool_call_id: call.id,
 						});
 					} catch (error) {
 						yield { type: "error", error };
 						messages.push({
 							role: "tool",
 							content: JSON.stringify({ error: String(error) }),
-							tool_call_id: call.id ?? "tool-call",
+							tool_call_id: call.id,
 						});
 					}
 				}
