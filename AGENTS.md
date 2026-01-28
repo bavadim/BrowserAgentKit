@@ -38,4 +38,5 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 
 - run tests after feature has completed
 - run the linter before committing changes
+- update README.md whenever API, usage, or workflow changes
 - commit changes in the case tests have passed
