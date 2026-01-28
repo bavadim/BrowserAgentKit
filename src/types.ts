@@ -52,6 +52,8 @@ export enum StreamingEventType {
 	ResponseInProgress = "response.in_progress",
 	ResponseOutputTextDelta = "response.output_text.delta",
 	ResponseOutputTextDone = "response.output_text.done",
+	ResponseReasoningSummaryTextDelta = "response.reasoning_summary_text.delta",
+	ResponseReasoningSummaryTextDone = "response.reasoning_summary_text.done",
 	ResponseFunctionCallArgumentsDelta = "response.function_call_arguments.delta",
 	ResponseFunctionCallArgumentsDone = "response.function_call_arguments.done",
 	ResponseCompleted = "response.completed",
@@ -71,6 +73,18 @@ export type ResponseOutputTextDeltaEvent = {
 
 export type ResponseOutputTextDoneEvent = {
 	type: StreamingEventType.ResponseOutputTextDone;
+	item_id?: string;
+	text: string;
+};
+
+export type ResponseReasoningSummaryTextDeltaEvent = {
+	type: StreamingEventType.ResponseReasoningSummaryTextDelta;
+	item_id?: string;
+	delta: string;
+};
+
+export type ResponseReasoningSummaryTextDoneEvent = {
+	type: StreamingEventType.ResponseReasoningSummaryTextDone;
 	item_id?: string;
 	text: string;
 };
@@ -98,6 +112,8 @@ export type StreamingEvent =
 	| ResponseInProgressEvent
 	| ResponseOutputTextDeltaEvent
 	| ResponseOutputTextDoneEvent
+	| ResponseReasoningSummaryTextDeltaEvent
+	| ResponseReasoningSummaryTextDoneEvent
 	| ResponseFunctionCallArgumentsDeltaEvent
 	| ResponseFunctionCallArgumentsDoneEvent
 	| ResponseCompletedEvent
@@ -127,6 +143,8 @@ export type AgentStatus = {
 export type AgentEvent =
 	| { type: "message"; content: string }
 	| { type: "message.delta"; delta: string }
+	| { type: "thinking"; summary: string }
+	| { type: "thinking.delta"; delta: string }
 	| { type: "status"; status: AgentStatus }
 	| { type: "tool.start"; name: string; args: unknown }
 	| { type: "tool.end"; name: string; result: unknown }
@@ -149,4 +167,5 @@ export type RunOptions = {
 
 export type AgentRunner = {
 	run: (input: string, runOptions?: RunOptions) => AsyncGenerator<AgentEvent, void, void>;
+	reset: () => void;
 };

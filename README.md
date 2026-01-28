@@ -77,6 +77,8 @@ for await (const ev of agent.run("Create a hero section on the canvas")) {
 ```
 
 `generate` must return an `AsyncIterable` of streaming events (e.g., from `client.responses.create({ stream: true })`).
+The agent preserves conversation history across runs; call `agent.reset()` to clear it (system prompt is kept).
+If `run()` is called while a run is already active, the call is ignored.
 
 ## Skills
 
@@ -145,6 +147,7 @@ You can prefill demo fields via query params:
 Typical event kinds:
 
 * `message` (agent text)
+* `thinking.delta` / `thinking` (reasoning summary text, when available)
 * `tool.start` / `tool.end`
 * `artifact`
 * `error`

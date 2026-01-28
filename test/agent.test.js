@@ -22,6 +22,8 @@ test("agent returns a message", async () => {
 	const generate = () =>
 		streamFrom([
 			{ type: StreamingEventType.ResponseCreated },
+			{ type: StreamingEventType.ResponseReasoningSummaryTextDelta, delta: "short " },
+			{ type: StreamingEventType.ResponseReasoningSummaryTextDone, text: "short summary" },
 			{ type: StreamingEventType.ResponseOutputTextDelta, delta: "hello" },
 			{ type: StreamingEventType.ResponseOutputTextDone, text: "hello" },
 			{ type: StreamingEventType.ResponseCompleted },
@@ -32,9 +34,12 @@ test("agent returns a message", async () => {
 
 	const deltaEvent = events.find((ev) => ev.type === "message.delta");
 	const messageEvent = events.find((ev) => ev.type === "message");
+	const thinkingEvent = events.find((ev) => ev.type === "thinking");
 	assert.ok(deltaEvent);
 	assert.ok(messageEvent);
+	assert.ok(thinkingEvent);
 	assert.equal(messageEvent.content, "hello");
+	assert.equal(thinkingEvent.summary, "short summary");
 });
 
 test("agent executes tools when requested", async () => {
@@ -263,4 +268,23 @@ test("agent reports model errors", async () => {
 
 	assert.ok(events.some((ev) => ev.type === "error"));
 	assert.ok(events.some((ev) => ev.type === "done"));
+});
+
+test("agent reset clears history", async () => {
+	const lengths = [];
+	const generate = ({ messages }) => {
+		lengths.push(messages.length);
+		return streamFrom([
+			{ type: StreamingEventType.ResponseOutputTextDone, text: "ok" },
+			{ type: StreamingEventType.ResponseCompleted },
+		]);
+	};
+
+	const agent = createAgent({ generate });
+	await collectEvents(agent.run("one"));
+	agent.reset();
+	await collectEvents(agent.run("two"));
+
+	assert.equal(lengths[0], 2);
+	assert.equal(lengths[1], 2);
 });

@@ -47,6 +47,8 @@ function addMessage(role, text) {
 
 let activeAssistantBubble = null;
 let activeAssistantText = "";
+let currentStatus = null;
+let thinkingSummary = "";
 
 function ensureAssistantBubble() {
 	if (!chatLog) {
@@ -89,7 +91,7 @@ function finalizeAssistantMessage(text) {
 function formatStatus(status) {
 	switch (status.kind) {
 		case "thinking":
-			return "Думаю...";
+			return thinkingSummary ? `Thinking: ${thinkingSummary}` : "Thinking...";
 		case "calling_tool":
 			return status.toolName ? `Вызываю ${status.toolName}...` : "Вызываю инструмент...";
 		case "tool_result":
@@ -102,11 +104,16 @@ function formatStatus(status) {
 	}
 }
 
-function setStatus(status) {
+function renderStatus() {
 	if (!statusEl || !statusTextEl) {
 		return;
 	}
-	const label = formatStatus(status);
+	if (!currentStatus) {
+		statusEl.classList.add("hidden");
+		statusTextEl.textContent = "";
+		return;
+	}
+	const label = formatStatus(currentStatus);
 	if (!label) {
 		statusEl.classList.add("hidden");
 		statusTextEl.textContent = "";
@@ -114,6 +121,26 @@ function setStatus(status) {
 	}
 	statusTextEl.textContent = label;
 	statusEl.classList.remove("hidden");
+}
+
+function setStatus(status) {
+	currentStatus = status;
+	if (status.kind !== "thinking") {
+		thinkingSummary = "";
+	}
+	renderStatus();
+}
+
+function setThinkingSummary(summary) {
+	thinkingSummary = summary;
+	if (!currentStatus || currentStatus.kind !== "thinking") {
+		currentStatus = { kind: "thinking" };
+	}
+	renderStatus();
+}
+
+function appendThinkingDelta(delta) {
+	setThinkingSummary(thinkingSummary + delta);
 }
 
 const skills = [
@@ -135,17 +162,58 @@ Create or update HTML inside the canvas.
 	},
 ];
 
+let lastClientConfig = { baseUrl: "", apiKey: "" };
+let client = null;
+
+function getClient() {
+	const baseUrl = baseUrlInput?.value.trim() ?? "";
+	const apiKey = apiKeyInput?.value.trim() ?? "";
+	if (!client || baseUrl !== lastClientConfig.baseUrl || apiKey !== lastClientConfig.apiKey) {
+		client = new OpenAI({
+			baseURL: baseUrl,
+			apiKey: apiKey || undefined,
+			dangerouslyAllowBrowser: true,
+		});
+		lastClientConfig = { baseUrl, apiKey };
+	}
+	return client;
+}
+
+const agent = canvas
+	? createAgent({
+			generate: ({ messages, tools, signal }) => {
+				const activeClient = getClient();
+				return activeClient.responses.create(
+					{
+						model: "gpt-5",
+						input: messages,
+						tools,
+						tool_choice: tools?.length ? "auto" : undefined,
+						stream: true,
+					},
+					signal ? { signal } : undefined
+				);
+			},
+			viewRoot: canvas,
+			skills,
+			tools: [jsInterpreterTool(), localStoreTool({ namespace: "bak" })],
+			policies: { maxSteps: 25 },
+		})
+	: null;
+
 runBtn.addEventListener("click", async () => {
 	if (!canvas) {
 		addMessage("assistant", "Canvas element not found.");
+		return;
+	}
+	if (!agent) {
+		addMessage("assistant", "Agent is not ready.");
 		return;
 	}
 	if (logEl) {
 		logEl.textContent = "";
 	}
 
-	const baseUrl = baseUrlInput.value.trim();
-	const apiKey = apiKeyInput.value.trim();
 	const prompt = promptInput.value.trim();
 
 	if (!prompt) {
@@ -156,33 +224,9 @@ runBtn.addEventListener("click", async () => {
 	runBtn.disabled = true;
 	activeAssistantBubble = null;
 	activeAssistantText = "";
-	if (statusEl) {
-		statusEl.classList.add("hidden");
-	}
-
-	const client = new OpenAI({
-		baseURL: baseUrl,
-		apiKey: apiKey || undefined,
-		dangerouslyAllowBrowser: true,
-	});
-
-	const agent = createAgent({
-		generate: ({ messages, tools, signal }) =>
-			client.responses.create(
-				{
-					model: "gpt-5",
-					input: messages,
-					tools,
-					tool_choice: tools?.length ? "auto" : undefined,
-					stream: true,
-				},
-				signal ? { signal } : undefined
-			),
-		viewRoot: canvas,
-		skills,
-		tools: [jsInterpreterTool(), localStoreTool({ namespace: "bak" })],
-		policies: { maxSteps: 25 },
-	});
+	currentStatus = null;
+	thinkingSummary = "";
+	renderStatus();
 
 	try {
 		for await (const ev of agent.run(prompt)) {
@@ -196,6 +240,12 @@ runBtn.addEventListener("click", async () => {
 			}
 			if (ev.type === "status") {
 				setStatus(ev.status);
+			}
+			if (ev.type === "thinking.delta") {
+				appendThinkingDelta(ev.delta);
+			}
+			if (ev.type === "thinking") {
+				setThinkingSummary(ev.summary);
 			}
 			if (ev.type === "error") {
 				if (ev.error instanceof Error) {
