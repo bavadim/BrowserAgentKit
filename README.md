@@ -95,7 +95,7 @@ The agent selects and executes skills inside the agent loop.
 ## Tools
 
 A tool is a JavaScript function plus a **separate Markdown description** that is sent to the model.
-Keep the description in `src/descriptions.ts`.
+Keep the description near the tool definition (in `src/index.ts`).
 
 You don’t call tools directly: you **pass tools into the agent**, and the agent calls them when needed.
 
