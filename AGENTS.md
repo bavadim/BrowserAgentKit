@@ -10,7 +10,7 @@ This repo is a single package with a browser demo:
 ## Build, Test, and Development Commands
 - `npm install`: installs dependencies.
 - `npm run build`: builds the library to `dist/`.
-- `npm test`: builds and runs tests.
+- `npm test`: builds and runs tests. The `--experimental-loader` warning during tests is expected and can be ignored.
 - `npm run lint`: runs ESLint.
 
 ## Coding Style & Naming Conventions
@@ -36,4 +36,5 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 ## Codding guidance
 
 - run tests after feature has completed
+- run the linter before committing changes
 - commit changes in the case tests have passed
