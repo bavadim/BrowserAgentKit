@@ -170,7 +170,7 @@ runBtn.addEventListener("click", async () => {
 		generate: ({ messages, tools, signal }) =>
 			client.responses.create(
 				{
-					model: "gpt-4.1-mini",
+					model: "gpt-5",
 					input: messages,
 					tools,
 					tool_choice: tools?.length ? "auto" : undefined,
