@@ -278,6 +278,7 @@ runBtn.addEventListener("click", async () => {
 
 	try {
 		for await (const ev of agent.run(prompt)) {
+			console.log(ev)
 			log(JSON.stringify(ev, null, 2));
 			if (ev.type === "message.delta") {
 				appendAssistantDelta(ev.delta);
