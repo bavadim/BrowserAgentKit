@@ -37,6 +37,15 @@ if (promptInput && params.has("message")) {
 	promptInput.value = params.get("message") ?? "";
 }
 
+if (promptInput) {
+	promptInput.addEventListener("keydown", (event) => {
+		if (event.key === "Enter" && event.shiftKey) {
+			event.preventDefault();
+			runBtn?.click();
+		}
+	});
+}
+
 function scrollChatToBottom() {
 	if (!chatLog) {
 		return;
