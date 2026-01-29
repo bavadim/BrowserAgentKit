@@ -76,7 +76,7 @@ for await (const ev of agent.run("Create a hero section on the canvas")) {
 }
 ```
 
-`generate` must return an `AsyncIterable` of streaming events (e.g., from `client.responses.create({ stream: true })`).
+`generate` must return (or resolve to) an `AsyncIterable` of streaming events (e.g., from `client.responses.create({ stream: true })`).
 The agent preserves conversation history across runs; call `agent.reset()` to clear it (system prompt is kept).
 If `run()` is called while a run is already active, the call is ignored.
 

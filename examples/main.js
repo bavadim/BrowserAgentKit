@@ -181,9 +181,9 @@ function getClient() {
 
 const agent = canvas
 	? createAgent({
-			generate: ({ messages, tools, signal }) => {
+			generate: async function* ({ messages, tools, signal }) {
 				const activeClient = getClient();
-				return activeClient.responses.create(
+				const stream = await activeClient.responses.create(
 					{
 						model: "gpt-5",
 						input: messages,
@@ -193,6 +193,9 @@ const agent = canvas
 					},
 					signal ? { signal } : undefined
 				);
+				for await (const event of stream) {
+					yield event;
+				}
 			},
 			viewRoot: canvas,
 			skills,

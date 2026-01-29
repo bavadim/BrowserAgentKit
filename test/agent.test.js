@@ -42,6 +42,22 @@ test("agent returns a message", async () => {
 	assert.equal(thinkingEvent.summary, "short summary");
 });
 
+test("agent accepts generate that resolves to a stream", async () => {
+	const generate = async () => {
+		await Promise.resolve();
+		return streamFrom([
+			{ type: StreamingEventType.ResponseCreated },
+			{ type: StreamingEventType.ResponseOutputTextDone, text: "ok" },
+			{ type: StreamingEventType.ResponseCompleted },
+		]);
+	};
+
+	const agent = createAgent({ generate });
+	const events = await collectEvents(agent.run("hi"));
+
+	assert.ok(events.some((ev) => ev.type === "message" && ev.content === "ok"));
+});
+
 test("agent executes tools when requested", async () => {
 	let calls = 0;
 	const generate = () => {

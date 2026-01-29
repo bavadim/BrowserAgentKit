@@ -176,7 +176,8 @@ export function createAgent(options: AgentOptions): AgentRunner {
 
 				let streamError: unknown = null;
 				try {
-					for await (const event of options.generate(request)) {
+					const stream = await options.generate(request);
+					for await (const event of stream) {
 						switch (event.type) {
 							case StreamingEventType.ResponseQueued:
 							case StreamingEventType.ResponseCreated:

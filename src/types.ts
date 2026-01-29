@@ -124,7 +124,9 @@ export type StreamingEvent =
 	| ResponseFailedEvent
 	| ResponseErrorEvent;
 
-export type Generate = (req: GenerateRequest) => AsyncIterable<StreamingEvent>;
+export type Generate = (
+	req: GenerateRequest
+) => AsyncIterable<StreamingEvent> | Promise<AsyncIterable<StreamingEvent>>;
 
 export type AgentPolicies = {
 	maxSteps?: number;
