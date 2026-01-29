@@ -22,7 +22,7 @@ export type CallTarget =
 
 export type StreamOutcome = "continue" | "stop" | "error";
 
-export type RunLoop = (
+export type RunAgentInternal = (
 	messages: Message[],
 	signal: AbortSignal | undefined,
 	ctx: ToolContext,
@@ -70,7 +70,7 @@ export const runSkill = async function* (
 	signal: AbortSignal | undefined,
 	maxSteps: number,
 	generate: AgentGenerate,
-	runLoop: RunLoop,
+	runAgentInternal: RunAgentInternal,
 	basePrompt: string
 ): AsyncGenerator<AgentStreamEvent, E.Either<Error, string>, void> {
 	const childSkills = target.skill.allowedSkills ?? [];
@@ -92,7 +92,7 @@ export const runSkill = async function* (
 					target.input.history ?? []
 				);
 				let skillText = "";
-				for await (const ev of runLoop(
+				for await (const ev of runAgentInternal(
 					nestedMessages,
 					signal,
 					ctx,
@@ -140,13 +140,13 @@ export async function* runToolCall(
 	signal: AbortSignal | undefined,
 	maxSteps: number,
 	generate: AgentGenerate,
-	runLoop: RunLoop,
+	runAgentInternal: RunAgentInternal,
 	basePrompt: string,
 	loopMessages: Message[]
 ): AsyncGenerator<AgentStreamEvent, StreamOutcome, void> {
 	yield right(toolStartEvent(call, args, target));
 	const result = target.kind === "skill"
-		? yield* runSkill(target, ctx, signal, maxSteps, generate, runLoop, basePrompt)
+		? yield* runSkill(target, ctx, signal, maxSteps, generate, runAgentInternal, basePrompt)
 		: await Promise.resolve()
 			.then(() => target.tool.run(args, ctx))
 			.then(E.right)

@@ -212,3 +212,42 @@ Add tests from the updated plan (see “Tests” section below), in particular:
 ## Out of Scope (explicitly excluded)
 5. Simplify message types / create a new `AgentMessage` type.
 7. Merge `runLoop` + `runAgent` into one generator.
+
+---
+
+# Plan: Merge `runLoop` + `runAgent`
+
+## Goals
+- Collapse the two generators into a single `runAgent` stream that owns both root-loop lifecycle and step iteration.
+- Keep arguments flat and preserve current behavior: abort on superseded runs, tool/skill execution, skill-list system insertion, and end-of-run `done`.
+- Preserve current event stream contract (`Either<Error, AgentEvent>`); no new event types.
+
+## Design Notes
+- `runAgent` becomes the only exported generator; internal helpers remain in `loop.ts` and `execute.ts`.
+- `runAgent` holds the loop `while (step < maxSteps)` and per-step `LoopState`.
+- The previous `runLoop` responsibilities split as:
+	- **Message construction + root context** stays at top of `runAgent`.
+	- **Per-step stream handling** uses `applyStreamEvent`/`flushThinking`/`finalContent`.
+	- **Tool/skill execution** via `runToolCall` from `execute.ts`.
+- Child cycle: replace recursive `runLoop` calls with a recursive call to `runAgentInternal` (a non-exported function) or a local `runSubAgent` inner generator to avoid re-doing root wiring (signals, activeRuns). Use flat args.
+
+## Steps (Concrete)
+1. **Introduce internal generator** in `src/agent.ts`:
+	- `async function* runAgentInternal(messages, signal, ctx, tools, skills, skillDepth, skillListMessage, maxSteps, generate)`
+	- This is the merged loop body (what `runLoop` did), but owned by `runAgent`.
+2. **Update `runAgent`**:
+	- Builds root `messages`, `rootSkillListMessage`, context, abort logic, then `yield* runAgentInternal(...)`.
+	- After the internal stream ends, emit `done` if no error was seen.
+3. **Update `runToolCall`** in `src/execute.ts`:
+	- Accept a function parameter `runAgentInternal` (or `runSubAgent`) to call for skills instead of `runLoop`.
+	- Rename parameter to reflect new shape and keep flat args.
+4. **Remove `runLoop`**:
+	- Delete exported/local `runLoop` function and related types (`RunLoop` in `execute.ts`), replacing with `RunAgentInternal` type.
+5. **Tests**:
+	- Ensure existing tests pass (no new behavior).
+	- Add one regression test: runAgent uses one generator path for both root + child (e.g., assert `runAgentInternal` is used by checking child calls still work and no duplicate root setup).
+
+## DoD
+- Only one exported generator (`runAgent`) in `src/agent.ts`.
+- `execute.ts` no longer references `runLoop`; uses `runAgentInternal` (or similar) for skills.
+- All tests and lint pass.

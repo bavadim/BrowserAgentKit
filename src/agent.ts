@@ -41,7 +41,7 @@ export function createAgentMessages(): Message[] {
 	return [{ role: "system", content: BASE_SYSTEM_PROMPT }];
 }
 
-async function* runLoop(
+async function* runAgentInternal(
 	loopMessages: Message[],
 	signal: AbortSignal | undefined,
 	ctx: ToolContext,
@@ -144,7 +144,7 @@ async function* runLoop(
 						signal,
 						maxSteps,
 						generate,
-						runLoop,
+						runAgentInternal,
 						BASE_SYSTEM_PROMPT,
 						loopMessages
 					)
@@ -221,7 +221,7 @@ export async function* runAgent(
 	let sawError = false;
 
 	try {
-		for await (const event of runLoop(
+		for await (const event of runAgentInternal(
 			messages,
 			controller.signal,
 			baseContext,
