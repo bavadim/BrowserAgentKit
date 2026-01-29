@@ -68,6 +68,15 @@ async function getEncoding(model: string): Promise<TokenEncoding> {
 	return loader;
 }
 
+function estimateTokenCount(messages: Message[]): number {
+	const text = messages.map((message) => messageToText(message)).join("\n");
+	const length = text.length;
+	if (length === 0) {
+		return 0;
+	}
+	return Math.ceil(length / 4);
+}
+
 function messageToText(message: Message): string {
 	if ("role" in message && typeof message.role === "string") {
 		return `${message.role}:${typeof message.content === "string" ? message.content : JSON.stringify(message.content)}`;
@@ -79,9 +88,17 @@ function messageToText(message: Message): string {
 }
 
 export async function countTokensForModel(messages: Message[], model: string): Promise<number> {
-	const encoding = await getEncoding(model);
-	const text = messages.map((message) => messageToText(message)).join("\n");
-	return encoding.encode(text).length;
+	const isBrowser = typeof window !== "undefined" && typeof window.document !== "undefined";
+	if (isBrowser) {
+		return estimateTokenCount(messages);
+	}
+	try {
+		const encoding = await getEncoding(model);
+		const text = messages.map((message) => messageToText(message)).join("\n");
+		return encoding.encode(text).length;
+	} catch {
+		return estimateTokenCount(messages);
+	}
 }
 
 export function contextWindowForModel(model: string): number {
