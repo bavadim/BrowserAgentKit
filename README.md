@@ -56,10 +56,13 @@ const client = new OpenAI({
 
 const skills = [Skill.fromDomSelector("//script[@id='skill-canvas-render']", document)];
 
-const generate = createOpenAIResponsesAdapter({
+const adapter = createOpenAIResponsesAdapter({
   client,
   model: "gpt-4.1-mini",
 });
+
+// Adapter shape:
+// { model, generate, countTokens?, contextWindowTokens? }
 
 const agentMessages = createAgentMessages();
 const tools = [
@@ -70,11 +73,17 @@ const agentContext = { viewRoot: document.getElementById("canvas") };
 
 for await (const ev of runAgent(
   agentMessages,
-  generate,
+  adapter.generate,
   "Create a hero section on the canvas",
   callables,
   25,
-  agentContext
+  agentContext,
+  undefined,
+  {
+    tokenCounter: adapter.countTokens,
+    contextWindowTokens: adapter.contextWindowTokens,
+    model: adapter.model,
+  }
 )) {
   if (E.isLeft(ev)) {
     console.error(ev.left);
@@ -85,7 +94,7 @@ for await (const ev of runAgent(
 }
 ```
 
-`generate(messages, tools, signal)` must return (or resolve to) an `AsyncIterable` of `Either<Error, AgentEvent>` objects. When using the OpenAI Responses stream, you can reuse `createOpenAIResponsesAdapter` from the library (see above or `examples/main.js`).
+`adapter.generate(messages, tools, signal)` must return (or resolve to) an `AsyncIterable` of `Either<Error, AgentEvent>` objects. When using the OpenAI Responses stream, you can reuse `createOpenAIResponsesAdapter` from the library (see above or `examples/main.js`).
 The agent preserves conversation history across runs; create a fresh `createAgentMessages()` array to clear it (system prompt is kept).
 If `runAgent()` is called again with the same messages array, the previous run is aborted.
 
@@ -219,7 +228,13 @@ You can prefill demo fields via query params:
 
 ## Agent API (async generator)
 
-`runAgent(messages, generate, input, callables?, maxSteps?, context?, signal?)` returns an async generator of `Either<Error, AgentEvent>`.
+`runAgent(messages, generate, input, callables?, maxSteps?, context?, signal?, options?)` returns an async generator of `Either<Error, AgentEvent>`.
+
+Context compaction options (main cycle only):
+- `tokenCounter`: function to count tokens for the current model.
+- `contextWindowTokens`: max context size (defaults to 96k).
+- `compactThreshold`: ratio to trigger compaction (defaults to 0.75).
+- `model`: model name passed to the token counter.
 
 Typical event kinds:
 

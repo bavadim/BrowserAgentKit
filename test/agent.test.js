@@ -20,8 +20,8 @@ function leftErrors(events) {
 	return events.filter(E.isLeft).map((event) => event.left);
 }
 
-function runAgentEvents(messages, generate, input, callables, maxSteps, context, signal) {
-	return collectEvents(runAgent(messages, generate, input, callables, maxSteps, context, signal));
+function runAgentEvents(messages, generate, input, callables, maxSteps, context, signal, options) {
+	return collectEvents(runAgent(messages, generate, input, callables, maxSteps, context, signal, options));
 }
 
 function streamFrom(events) {
@@ -366,6 +366,69 @@ test("prunes dangling tool calls from history", async () => {
 
 	assert.ok(seenMessages);
 	assert.ok(!seenMessages.some((msg) => "type" in msg && msg.type === "function_call"));
+});
+
+test("compacts history when token budget is high", async () => {
+	const generate = () => streamFrom([{ type: "message", content: "ok" }]);
+	const messages = createAgentMessages();
+	messages.push({ role: "user", content: "u1" });
+	messages.push({ role: "assistant", content: "a1" });
+	messages.push({ role: "user", content: "u2" });
+	messages.push({ role: "assistant", content: "a2" });
+	messages.push({ role: "user", content: "u3" });
+	messages.push({ role: "assistant", content: "a3" });
+	messages.push({ role: "user", content: "u4" });
+	messages.push({ role: "assistant", content: "a4" });
+	messages.push({ role: "user", content: "u5" });
+	messages.push({ role: "assistant", content: "a5" });
+
+	await runAgentEvents(messages, generate, "u6", [], 1, undefined, undefined, {
+		tokenCounter: () => 1_000_000,
+		contextWindowTokens: 100,
+		compactThreshold: 0.75,
+		model: "test",
+	});
+
+	const contents = messages
+		.filter((message) => "role" in message)
+		.map((message) => `${message.role}:${message.content}`);
+	assert.ok(!contents.includes("user:u1"));
+	assert.ok(!contents.includes("user:u2"));
+	assert.ok(contents.includes("user:u3"));
+	assert.ok(contents.includes("assistant:a3"));
+	assert.ok(contents.includes("user:u4"));
+	assert.ok(contents.includes("assistant:a4"));
+	assert.ok(contents.includes("user:u5"));
+	assert.ok(contents.includes("assistant:a5"));
+	assert.ok(contents.includes("user:u6"));
+	assert.ok(contents.includes("assistant:ok"));
+});
+
+test("does not compact in child cycle", async () => {
+	const generate = () => streamFrom([{ type: "message", content: "ok" }]);
+	const messages = createAgentMessages();
+	messages.push({ role: "user", content: "u1" });
+	messages.push({ role: "assistant", content: "a1" });
+	messages.push({ role: "user", content: "u2" });
+	messages.push({ role: "assistant", content: "a2" });
+	messages.push({ role: "user", content: "u3" });
+	messages.push({ role: "assistant", content: "a3" });
+	messages.push({ role: "user", content: "u4" });
+	messages.push({ role: "assistant", content: "a4" });
+
+	await runAgentEvents(messages, generate, "u5", [], 1, undefined, undefined, {
+		tokenCounter: () => 1_000_000,
+		contextWindowTokens: 100,
+		compactThreshold: 0.75,
+		model: "test",
+		skillDepth: 1,
+	});
+
+	const contents = messages
+		.filter((message) => "role" in message)
+		.map((message) => `${message.role}:${message.content}`);
+	assert.ok(contents.includes("user:u1"));
+	assert.ok(contents.includes("assistant:a1"));
 });
 
 test("model can ignore $skill hints", async () => {

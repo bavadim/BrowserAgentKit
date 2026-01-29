@@ -1,7 +1,14 @@
 import { pipe } from "fp-ts/lib/function.js";
 import * as E from "fp-ts/lib/Either.js";
 import * as O from "fp-ts/lib/Option.js";
-import type { AgentEvent, AgentStreamEvent, Message, ToolDefinition } from "./types";
+import type {
+	AgentEvent,
+	AgentStreamEvent,
+	AgentGenerate,
+	Message,
+	TokenCounter,
+	ToolDefinition,
+} from "./types";
 
 const toError = (error: unknown): Error =>
 	error instanceof Error ? error : new Error(String(error));
@@ -23,7 +30,76 @@ export type OpenAIResponsesAdapterOptions = {
 	model: string;
 	toolChoice?: "auto" | "none" | "required";
 	responseOptions?: Record<string, unknown>;
+	contextWindowTokens?: number;
 };
+
+export type AgentAdapter = {
+	model: string;
+	generate: AgentGenerate;
+	countTokens?: TokenCounter;
+	contextWindowTokens?: number;
+};
+
+type TokenEncoding = {
+	encode: (text: string) => number[];
+};
+
+const encodingCache = new Map<string, Promise<TokenEncoding>>();
+
+async function getEncoding(model: string): Promise<TokenEncoding> {
+	if (encodingCache.has(model)) {
+		return encodingCache.get(model) as Promise<TokenEncoding>;
+	}
+	const loader = import("tiktoken").then((mod) => {
+		const api = mod as {
+			encoding_for_model?: (model: string) => TokenEncoding;
+			get_encoding?: (name: string) => TokenEncoding;
+		};
+		if (!api.encoding_for_model || !api.get_encoding) {
+			throw new Error("tiktoken API is missing encoding helpers.");
+		}
+		try {
+			return api.encoding_for_model(model);
+		} catch {
+			return api.get_encoding("cl100k_base");
+		}
+	});
+	encodingCache.set(model, loader);
+	return loader;
+}
+
+function messageToText(message: Message): string {
+	if ("role" in message && typeof message.role === "string") {
+		return `${message.role}:${typeof message.content === "string" ? message.content : JSON.stringify(message.content)}`;
+	}
+	if ("type" in message) {
+		return JSON.stringify(message);
+	}
+	return JSON.stringify(message);
+}
+
+export async function countTokensForModel(messages: Message[], model: string): Promise<number> {
+	const encoding = await getEncoding(model);
+	const text = messages.map((message) => messageToText(message)).join("\n");
+	return encoding.encode(text).length;
+}
+
+export function contextWindowForModel(model: string): number {
+	const normalized = model.toLowerCase();
+	if (normalized.includes("128k") || normalized.includes("128000")) {
+		return 128_000;
+	}
+	if (normalized.includes("200k") || normalized.includes("200000")) {
+		return 200_000;
+	}
+	if (normalized.includes("32k") || normalized.includes("32000")) {
+		return 32_000;
+	}
+	if (normalized.includes("16k") || normalized.includes("16000")) {
+		return 16_000;
+	}
+	return 96_000;
+}
 
 export type OpenAIResponsesStreamEvent = {
 	type: string;
@@ -125,15 +201,13 @@ function nextDelta(nextText: string, bufferRef: { value: string }): string {
 	return delta;
 }
 
-export function createOpenAIResponsesAdapter(
-	options: OpenAIResponsesAdapterOptions
-): (
-	messages: Message[],
-	tools?: ToolDefinition[],
-	signal?: AbortSignal
-) => AsyncIterable<AgentStreamEvent> {
+export function createOpenAIResponsesAdapter(options: OpenAIResponsesAdapterOptions): AgentAdapter {
 	const toolChoice = options.toolChoice;
-	return async function* generate(messages: Message[], tools?: ToolDefinition[], signal?: AbortSignal) {
+	const generate: AgentGenerate = async function* (
+		messages: Message[],
+		tools?: ToolDefinition[],
+		signal?: AbortSignal
+	) {
 		console.debug(messages);
 		const client = options.getClient ? options.getClient() : options.client;
 		if (!client) {
@@ -341,5 +415,14 @@ export function createOpenAIResponsesAdapter(
 					break;
 			}
 		}
+	};
+	const contextWindowTokens = options.contextWindowTokens ?? contextWindowForModel(options.model);
+	const countTokens: TokenCounter = (messages, model) =>
+		countTokensForModel(messages, model ?? options.model);
+	return {
+		model: options.model,
+		generate,
+		countTokens,
+		contextWindowTokens,
 	};
 }

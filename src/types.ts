@@ -23,6 +23,8 @@ export type ToolContext = {
 
 export type ToolAction = (args: unknown, ctx: ToolContext) => Promise<unknown> | unknown;
 
+export type TokenCounter = (messages: Message[], model?: string) => number | Promise<number>;
+
 export type Callable = {
 	kind: "tool" | "skill";
 	name: string;
@@ -51,6 +53,10 @@ export type RunAgentOptions = {
 	skillDepth?: number;
 	callableListMessage?: Message | null;
 	skipActiveRuns?: boolean;
+	tokenCounter?: TokenCounter;
+	contextWindowTokens?: number;
+	compactThreshold?: number;
+	model?: string;
 };
 
 export enum AgentStatusKind {

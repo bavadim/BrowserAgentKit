@@ -192,17 +192,17 @@ function getClient() {
 	return client;
 }
 
-let lastGenerate = { model: "", adapter: null };
+let lastAdapter = { model: "", adapter: null };
 
 function getSelectedModel() {
 	const value = modelSelect?.value?.trim();
 	return value || "gpt-5-mini";
 }
 
-function getGenerate() {
+function getAdapter() {
 	const model = getSelectedModel();
-	if (!lastGenerate.adapter || lastGenerate.model !== model) {
-		lastGenerate = {
+	if (!lastAdapter.adapter || lastAdapter.model !== model) {
+		lastAdapter = {
 			model,
 			adapter: createOpenAIResponsesAdapter({
 				getClient,
@@ -210,7 +210,7 @@ function getGenerate() {
 			}),
 		};
 	}
-	return lastGenerate.adapter;
+	return lastAdapter.adapter;
 }
 
 const agentMessages = createAgentMessages();
@@ -245,14 +245,20 @@ runBtn.addEventListener("click", async () => {
 	showAssistantStatus({ kind: "thinking", label: "Working..." });
 
 	try {
-		const generate = getGenerate();
+		const adapter = getAdapter();
 		for await (const ev of withStatus(runAgent(
 			agentMessages,
-			generate,
+			adapter.generate,
 			prompt,
 			callables,
 			25,
-			agentContext
+			agentContext,
+			undefined,
+			{
+				tokenCounter: adapter.countTokens,
+				contextWindowTokens: adapter.contextWindowTokens,
+				model: adapter.model,
+			}
 		))) {
 			if (E.isLeft(ev)) {
 				const error = ev.left;

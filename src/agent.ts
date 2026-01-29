@@ -34,6 +34,53 @@ const toError = (error: unknown): Error =>
 const right = (event: AgentEvent): AgentStreamEvent => E.right(event);
 const left = (error: Error): AgentStreamEvent => E.left(error);
 
+const DEFAULT_CONTEXT_WINDOW_TOKENS = 96_000;
+const DEFAULT_COMPACT_THRESHOLD = 0.75;
+
+function getMessageRole(message: Message): string | undefined {
+	if ("role" in message && typeof message.role === "string") {
+		return message.role;
+	}
+	const messageType = (message as { type?: unknown }).type;
+	if (messageType === "message") {
+		const role = (message as { role?: unknown }).role;
+		return typeof role === "string" ? role : undefined;
+	}
+	return undefined;
+}
+
+function compactHistory(messages: Message[]): Message[] {
+	const firstUserIndex = messages.findIndex((message) => getMessageRole(message) === "user");
+	if (firstUserIndex === -1) {
+		return messages;
+	}
+	const head = messages.slice(0, firstUserIndex);
+	const segments: Message[][] = [];
+	let current: Message[] | null = null;
+	for (let i = firstUserIndex; i < messages.length; i += 1) {
+		const message = messages[i];
+		const role = getMessageRole(message);
+		if (role === "user") {
+			if (current && current.length > 0) {
+				segments.push(current);
+			}
+			current = [message];
+			continue;
+		}
+		if (current) {
+			current.push(message);
+		}
+	}
+	if (current && current.length > 0) {
+		segments.push(current);
+	}
+	if (segments.length <= 3) {
+		return messages;
+	}
+	const tailSegments = segments.slice(-3).flat();
+	return [...head, ...tailSegments];
+}
+
 function pruneDanglingToolCalls(messages: Message[]): void {
 	const callIds = new Set<string>();
 	const outputIds = new Set<string>();
@@ -229,6 +276,21 @@ export async function* runAgent(
 		signal: runSignal,
 	};
 	pruneDanglingToolCalls(messages);
+	if ((options?.skillDepth ?? 0) === 0) {
+		const tokenCounter = options?.tokenCounter;
+		if (tokenCounter) {
+			const projectedMessages: Message[] = [...messages, { role: "user", content: input }];
+			const contextWindow = options?.contextWindowTokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS;
+			const threshold = options?.compactThreshold ?? DEFAULT_COMPACT_THRESHOLD;
+			const tokenCount = await Promise.resolve(tokenCounter(projectedMessages, options?.model));
+			if (tokenCount >= contextWindow * threshold) {
+				const compacted = compactHistory(messages);
+				if (compacted !== messages) {
+					messages.splice(0, messages.length, ...compacted);
+				}
+			}
+		}
+	}
 	messages.push({ role: "user", content: input });
 	let sawError = false;
 	const callableMap = new Map<string, Callable>();
