@@ -376,7 +376,7 @@ test("skill call builds child history and isolates parent", async () => {
 			return streamFrom([
 				{
 					type: "tool.start",
-					name: "dom.skill",
+					name: "dom_skill",
 					args: JSON.stringify({
 						task: "child task",
 						history: [{ role: "user", content: "prior" }],
@@ -426,7 +426,7 @@ test("skill prompt sanitizes HTML to markdown", async () => {
 			return streamFrom([
 				{
 					type: "tool.start",
-					name: "dom.skill",
+					name: "dom_skill",
 					args: JSON.stringify({ task: "do" }),
 					callId: "call-1",
 				},
@@ -464,7 +464,7 @@ test("skill prompt empty after sanitization emits error", async () => {
 			return streamFrom([
 				{
 					type: "tool.start",
-					name: "dom.skill",
+					name: "dom_skill",
 					args: JSON.stringify({ task: "do" }),
 					callId: "call-1",
 				},
@@ -492,7 +492,7 @@ test("skill call args are validated", async () => {
 			return streamFrom([
 				{
 					type: "tool.start",
-					name: "bad.skill",
+					name: "bad_skill",
 					args: "{}",
 					callId: "call-1",
 				},
@@ -526,7 +526,7 @@ test("child scope limits tools and skills", async () => {
 			return streamFrom([
 				{
 					type: "tool.start",
-					name: "parent.skill",
+					name: "parent_skill",
 					args: JSON.stringify({ task: "do" }),
 					callId: "call-1",
 				},
@@ -568,7 +568,7 @@ test("child scope limits tools and skills", async () => {
 	await runAgentEvents(messages, generate, "hi", callables, undefined, context);
 
 	const childToolNames = childTools.map((tool) => tool.name).sort();
-	assert.deepEqual(childToolNames, ["child.skill", "child.tool"]);
+	assert.deepEqual(childToolNames, ["child_skill", "child_tool"]);
 });
 
 test("skill events include depth and input for nested calls", async () => {
@@ -584,7 +584,7 @@ test("skill events include depth and input for nested calls", async () => {
 				return streamFrom([
 					{
 						type: "tool.start",
-						name: "parent.skill",
+						name: "parent_skill",
 						args: JSON.stringify({ task: "parent task" }),
 						callId: "call-1",
 					},
@@ -593,7 +593,7 @@ test("skill events include depth and input for nested calls", async () => {
 				return streamFrom([
 					{
 						type: "tool.start",
-						name: "child.skill",
+						name: "child_skill",
 						args: JSON.stringify({ task: "child task" }),
 						callId: "call-2",
 					},

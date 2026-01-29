@@ -13,9 +13,27 @@ type SkillMarkdown = {
 	body: string;
 };
 
+const CALLABLE_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+function normalizeCallableName(name: string, fallback: string): string {
+	const trimmed = name.trim();
+	if (CALLABLE_NAME_PATTERN.test(trimmed)) {
+		return trimmed;
+	}
+	const sanitized = trimmed
+		.replace(/[^a-zA-Z0-9_-]/g, "_")
+		.replace(/_+/g, "_")
+		.replace(/^_+|_+$/g, "");
+	if (sanitized && CALLABLE_NAME_PATTERN.test(sanitized)) {
+		return sanitized;
+	}
+	return fallback;
+}
+
 export class Skill {
 	public readonly kind = "skill" as const;
 	public readonly name: string;
+	public readonly callName: string;
 	public readonly description?: string;
 	public readonly prompt: string;
 	public readonly callables: Callable[];
@@ -27,6 +45,7 @@ export class Skill {
 		callables: Callable[] = []
 	) {
 		this.name = name;
+		this.callName = normalizeCallableName(name, "skill");
 		this.description = description;
 		this.prompt = prompt;
 		this.callables = callables;
@@ -37,8 +56,9 @@ export class Skill {
 	}
 
 	public formatForList(): string {
+		const callName = this.callName !== this.name ? `\nCall name: ${this.callName}` : "";
 		const desc = this.description ? `\nDescription: ${this.description}` : "";
-		return `## Skill: ${this.name}${desc}`;
+		return `## Skill: ${this.name}${callName}${desc}`;
 	}
 
 	public buildPrompt(childCallables: Callable[]): E.Either<Error, string> {
@@ -66,7 +86,7 @@ export class Skill {
 	public toToolDefinition(): ToolDefinition {
 		return {
 			type: "function",
-			name: this.name,
+			name: this.callName,
 			description: this.description,
 			parameters: {
 				type: "object",

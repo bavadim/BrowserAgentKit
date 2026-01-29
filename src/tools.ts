@@ -44,10 +44,27 @@ type InterpreterHelpers = {
 };
 
 const jqueryCache = new WeakMap<Window, Promise<unknown | undefined>>();
+const CALLABLE_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+function normalizeCallableName(name: string, fallback: string): string {
+	const trimmed = name.trim();
+	if (CALLABLE_NAME_PATTERN.test(trimmed)) {
+		return trimmed;
+	}
+	const sanitized = trimmed
+		.replace(/[^a-zA-Z0-9_-]/g, "_")
+		.replace(/_+/g, "_")
+		.replace(/^_+|_+$/g, "");
+	if (sanitized && CALLABLE_NAME_PATTERN.test(sanitized)) {
+		return sanitized;
+	}
+	return fallback;
+}
 
 export class Tool {
 	public readonly kind = "tool" as const;
 	public readonly name: string;
+	public readonly callName: string;
 	public readonly description?: string;
 	public readonly inputSchema: JsonSchema;
 	public readonly outputSchema: JsonSchema;
@@ -61,6 +78,7 @@ export class Tool {
 		outputSchema: JsonSchema
 	) {
 		this.name = name;
+		this.callName = normalizeCallableName(name, "tool");
 		this.description = description;
 		this.action = action;
 		this.inputSchema = inputSchema;
@@ -74,7 +92,7 @@ export class Tool {
 	public toToolDefinition(): ToolDefinition {
 		return {
 			type: "function",
-			name: this.name,
+			name: this.callName,
 			description: this.description,
 			parameters: this.inputSchema,
 			strict: true,
@@ -82,8 +100,9 @@ export class Tool {
 	}
 
 	public formatForList(): string {
+		const callName = this.callName !== this.name ? `\nCall name: ${this.callName}` : "";
 		const desc = this.description ? `\nDescription: ${this.description}` : "";
-		return `## Tool: ${this.name}${desc}`;
+		return `## Tool: ${this.name}${callName}${desc}`;
 	}
 }
 

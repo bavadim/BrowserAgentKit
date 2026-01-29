@@ -139,11 +139,14 @@ The agent exposes each skill as a function-calling tool. When a skill runs, the 
 - Makes only the skill's `callables` available to the child cycle.
 The skill tool arguments are `{ task: string; history?: EasyInputMessage[] }`.
 At the start of each root cycle, the agent injects a system message listing available tools and skills. If the user mentions `$name`, it is treated as a suggestion.
+OpenAI tool names must match `^[a-zA-Z0-9_-]+$`, so skill/tool names are normalized for function calling
+(e.g., `canvas.render` → `canvas_render`). When the name changes, the system list shows the call name.
 
 ## Tools
 
 A tool is an instance of the `Tool` class: name, description, action, and **input/output schemas**.
 Keep the description near the tool definition (in `src/tools.ts`).
+Tool names are also normalized for function calling using the same rule as skills.
 
 ```ts
 import { Tool } from "browseragentkit";

@@ -26,6 +26,7 @@ export type ToolAction = (args: unknown, ctx: ToolContext) => Promise<unknown> |
 export type Callable = {
 	kind: "tool" | "skill";
 	name: string;
+	callName: string;
 	description?: string;
 	toToolDefinition: () => ToolDefinition;
 	formatForList: () => string;

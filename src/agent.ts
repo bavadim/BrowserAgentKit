@@ -140,9 +140,13 @@ export async function* runAgent(
 	};
 	messages.push({ role: "user", content: input });
 	let sawError = false;
-	const callableMap = new Map<string, Callable>(
-		callables.map((callable) => [callable.name, callable])
-	);
+	const callableMap = new Map<string, Callable>();
+	for (const callable of callables) {
+		callableMap.set(callable.callName, callable);
+		if (callable.name !== callable.callName) {
+			callableMap.set(callable.name, callable);
+		}
+	}
 	const toolDefs = toOpenAITools(callables);
 	const resolveTarget = (call: ToolCall, args: unknown): E.Either<Error, CallTarget> => {
 		const callable = callableMap.get(call.name);
