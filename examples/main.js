@@ -233,6 +233,9 @@ const agent = canvas
 						break;
 					case "response.completed":
 						break;
+					case "response.output_item.added":
+					case "response.output_item.done":
+						break;
 					default:
 						console.error("unrecognized event", event);
 						break;
