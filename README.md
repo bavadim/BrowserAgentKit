@@ -19,10 +19,10 @@ npm i browseragentkit
 ## Quick start
 
 ```ts
-import * as E from "fp-ts/lib/Either.js";
 import {
   createAgentMessages,
   createOpenAIResponsesAdapter,
+  isAgentError,
   jsInterpreterTool,
   runAgent,
   Skill,
@@ -49,7 +49,7 @@ import {
 const skills = [Skill.fromDomSelector("//script[@id='skill-canvas-render']", document)];
 
 const adapter = createOpenAIResponsesAdapter({
-  model: "gpt-4.1-mini",
+  model: "gpt-5.1-codex-mini",
   baseURL: "/api/llm", // your backend proxy
   apiKey: "sk-...", // DANGEROUS! DO NOT PASS YOUR OWN KEY
   dangerouslyAllowBrowser: true,
@@ -79,7 +79,7 @@ for await (const ev of runAgent(
     model: adapter.model,
   }
 )) {
-  if (E.isLeft(ev)) {
+  if (isAgentError(ev)) {
     console.error(ev.left);
     continue;
   }
@@ -255,7 +255,7 @@ Consume it with:
 const agentMessages = createAgentMessages();
 
 for await (const ev of runAgent(agentMessages, generate, "...")) {
-  if (E.isLeft(ev)) {
+  if (isAgentError(ev)) {
     console.error(ev.left);
     break;
   }
@@ -269,7 +269,7 @@ If you want status events, wrap the stream:
 import { withStatus } from "browseragentkit";
 
 for await (const ev of withStatus(runAgent(agentMessages, generate, "..."))) {
-  if (E.isLeft(ev)) {
+  if (isAgentError(ev)) {
     console.error(ev.left);
     break;
   }

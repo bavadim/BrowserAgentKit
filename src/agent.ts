@@ -34,6 +34,14 @@ const toError = (error: unknown): Error =>
 const right = (event: AgentEvent): AgentStreamEvent => E.right(event);
 const left = (error: Error): AgentStreamEvent => E.left(error);
 
+export function isAgentError(event: AgentStreamEvent): event is E.Left<Error> {
+	return E.isLeft(event);
+}
+
+export function isAgentEvent(event: AgentStreamEvent): event is E.Right<AgentEvent> {
+	return E.isRight(event);
+}
+
 const DEFAULT_CONTEXT_WINDOW_TOKENS = 96_000;
 const DEFAULT_COMPACT_THRESHOLD = 0.75;
 

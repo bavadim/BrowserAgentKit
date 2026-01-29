@@ -1,7 +1,7 @@
-import * as E from "fp-ts/lib/Either.js";
 import {
 	createOpenAIResponsesAdapter,
 	createAgentMessages,
+	isAgentError,
 	runAgent,
 	domAppendHtmlTool,
 	domBindEventTool,
@@ -178,7 +178,7 @@ let lastAdapter = { key: "", adapter: null };
 
 function getSelectedModel() {
 	const value = modelSelect?.value?.trim();
-	return value || "gpt-5-mini";
+	return value || "gpt-5.1-codex-mini";
 }
 
 function getAdapter() {
@@ -247,7 +247,7 @@ runBtn.addEventListener("click", async () => {
 				model: adapter.model,
 			}
 		))) {
-			if (E.isLeft(ev)) {
+			if (isAgentError(ev)) {
 				const error = ev.left;
 				if (error instanceof Error) {
 					console.error(error);
