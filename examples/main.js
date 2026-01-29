@@ -101,22 +101,25 @@ function formatStatus(status) {
 }
 
 function renderStatus() {
-	if (!statusEl || !statusTextEl) {
-		return;
-	}
-	if (!currentStatus) {
+	if (statusEl) {
 		statusEl.classList.add("hidden");
-		statusTextEl.textContent = "";
-		return;
 	}
-	const label = formatStatus(currentStatus);
+	if (statusTextEl) {
+		statusTextEl.textContent = "";
+	}
+}
+
+function renderStatusBubble(status) {
+	const label = status ? formatStatus(status) : "";
 	if (!label) {
-		statusEl.classList.add("hidden");
-		statusTextEl.textContent = "";
 		return;
 	}
-	statusTextEl.textContent = label;
-	statusEl.classList.remove("hidden");
+	const bubble = ensureAssistantBubble();
+	if (!bubble) {
+		return;
+	}
+	bubble.textContent = label;
+	activeAssistantText = "";
 }
 
 function setStatus(status) {
@@ -125,6 +128,7 @@ function setStatus(status) {
 		thinkingSummary = "";
 	}
 	renderStatus();
+	renderStatusBubble(status);
 }
 
 function setThinkingSummary(summary) {
@@ -133,6 +137,7 @@ function setThinkingSummary(summary) {
 		currentStatus = { kind: "thinking" };
 	}
 	renderStatus();
+	renderStatusBubble(currentStatus);
 }
 
 function appendThinkingDelta(delta) {
@@ -471,7 +476,6 @@ runBtn.addEventListener("click", async () => {
 			}
 			if (ev.type === "message") {
 				finalizeAssistantMessage(ev.content);
-				addMessage("assistant", ev.content);
 			}
 			if (ev.type === "status") {
 				setStatus(ev.status);
