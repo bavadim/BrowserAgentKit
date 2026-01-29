@@ -428,16 +428,19 @@ export function jsInterpreterTool(): Tool {
 }
 
 const domSummaryDescription =
-	"Return a Markdown tree of the DOM (scoped to view root). Lines are truncated at 2048 chars.";
+	"Return a Markdown tree of the DOM scoped to the view root. Use '/' for the root, '//' for descendants. Lines are truncated at 2048 chars.";
 
-const domSubtreeHtmlDescription = "Return the full outerHTML of the first node matching the XPath selector.";
+const domSubtreeHtmlDescription =
+	"Return the outerHTML of the first node matching the XPath selector (scoped to view root; use '/' for root and '//' for descendants). Return an empty string if none.";
 
-const domAppendHtmlDescription = "Append an HTML string as children of the node matching the XPath selector.";
+const domAppendHtmlDescription =
+	"Append an HTML string as children of the node matching the XPath selector (scoped to view root; use '/' for root and '//' for descendants). Returns ok=false if no match.";
 
-const domRemoveDescription = "Remove all nodes matching the XPath selector.";
+const domRemoveDescription =
+	"Remove all nodes matching the XPath selector (scoped to view root; use '/' for root and '//' for descendants). Returns ok=false if no match.";
 
 const domBindEventDescription =
-	"Attach a JS event handler to all nodes matching the XPath selector. Handler receives event, element, document, window, $.";
+	"Attach a JS event handler to all nodes matching the XPath selector (scoped to view root; use '/' for root and '//' for descendants). Handler receives event, element, document, window, $. Returns ok=false if no match.";
 
 const jsRunDescription =
 	"Run a JavaScript snippet inside the browser and return its result. Use jQuery ($) for DOM/event work.";
@@ -536,7 +539,8 @@ export function domSubtreeHtmlTool(): Tool {
 		domSubtreeHtmlDescription,
 		(args: unknown, ctx: ToolContext): string => {
 			const { xpath } = args as { xpath: string };
-			const { node } = resolveNodeByXPath(xpath, ctx as RuntimeEnv | undefined);
+			const { nodes } = findNodesByXPath(xpath, ctx as RuntimeEnv | undefined);
+			const node = nodes[0] ?? null;
 			return nodeToString(node);
 		},
 		inputSchema,
@@ -568,7 +572,11 @@ export function domAppendHtmlTool(): Tool {
 		domAppendHtmlDescription,
 		(args: unknown, ctx: ToolContext): { ok: boolean; appended: number } => {
 			const { xpath, html } = args as { xpath: string; html: string };
-			const { doc, node } = resolveNodeByXPath(xpath, ctx as RuntimeEnv | undefined);
+			const { doc, nodes } = findNodesByXPath(xpath, ctx as RuntimeEnv | undefined);
+			const node = nodes[0];
+			if (!node) {
+				return { ok: false, appended: 0 };
+			}
 			if (node.nodeType !== Node.ELEMENT_NODE) {
 				throw new Error("Target node is not an element.");
 			}
@@ -615,7 +623,7 @@ export function domRemoveTool(): Tool {
 					removed += 1;
 				}
 			}
-			return { ok: true, removed };
+			return { ok: removed > 0, removed };
 		},
 		inputSchema,
 		outputSchema
@@ -667,7 +675,7 @@ export function domBindEventTool(): Tool {
 				element.addEventListener(event, (ev) => handler(ev, element, doc, win ?? undefined, jq));
 				attached += 1;
 			}
-			return { ok: true, attached };
+			return { ok: attached > 0, attached };
 		},
 		inputSchema,
 		outputSchema

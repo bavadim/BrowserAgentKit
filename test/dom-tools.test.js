@@ -82,6 +82,18 @@ test("domSubtreeHtmlTool returns outerHTML", async () => {
 	});
 });
 
+test("domSubtreeHtmlTool returns empty string when not found", async () => {
+	await withDom("<div id=\"root\"></div>", (dom) => {
+		const tool = domSubtreeHtmlTool();
+		const root = dom.window.document.querySelector("#root");
+		const output = tool.run(
+			{ xpath: "//section" },
+			{ viewRoot: root, document: dom.window.document, window: dom.window }
+		);
+		assert.equal(output, "");
+	});
+});
+
 test("domAppendHtmlTool appends HTML to the target node", async () => {
 	await withDom("<div id=\"root\"></div>", (dom) => {
 		const tool = domAppendHtmlTool();
@@ -93,6 +105,19 @@ test("domAppendHtmlTool appends HTML to the target node", async () => {
 		assert.equal(result.ok, true);
 		assert.equal(result.appended, 1);
 		assert.ok(root.innerHTML.includes("span"));
+	});
+});
+
+test("domAppendHtmlTool returns ok=false when not found", async () => {
+	await withDom("<div id=\"root\"></div>", (dom) => {
+		const tool = domAppendHtmlTool();
+		const root = dom.window.document.querySelector("#root");
+		const result = tool.run(
+			{ xpath: "//section", html: "<span>Hi</span>" },
+			{ viewRoot: root, document: dom.window.document, window: dom.window }
+		);
+		assert.equal(result.ok, false);
+		assert.equal(result.appended, 0);
 	});
 });
 
@@ -110,6 +135,19 @@ test("domRemoveTool removes all matching nodes", async () => {
 	});
 });
 
+test("domRemoveTool returns ok=false when not found", async () => {
+	await withDom("<div id=\"root\"></div>", (dom) => {
+		const tool = domRemoveTool();
+		const root = dom.window.document.querySelector("#root");
+		const result = tool.run(
+			{ xpath: "//p" },
+			{ viewRoot: root, document: dom.window.document, window: dom.window }
+		);
+		assert.equal(result.ok, false);
+		assert.equal(result.removed, 0);
+	});
+});
+
 test("domBindEventTool attaches handlers to all matches", async () => {
 	await withDom("<div id=\"root\"><button id=\"btn\"></button></div>", async (dom) => {
 		const tool = domBindEventTool();
@@ -123,6 +161,19 @@ test("domBindEventTool attaches handlers to all matches", async () => {
 		const btn = dom.window.document.querySelector("#btn");
 		btn.dispatchEvent(new dom.window.Event("click"));
 		assert.equal(btn.dataset.hit, "yes");
+	});
+});
+
+test("domBindEventTool returns ok=false when not found", async () => {
+	await withDom("<div id=\"root\"></div>", async (dom) => {
+		const tool = domBindEventTool();
+		const root = dom.window.document.querySelector("#root");
+		const result = await tool.run(
+			{ xpath: "//button", event: "click", code: "return;" },
+			{ viewRoot: root, document: dom.window.document, window: dom.window }
+		);
+		assert.equal(result.ok, false);
+		assert.equal(result.attached, 0);
 	});
 });
 
