@@ -28,7 +28,10 @@ import {
 	type StreamOutcome,
 } from "./execute";
 
-const BASE_SYSTEM_PROMPT = "You are a browser-based code agent. Use tools when helpful and respond succinctly.";
+const BASE_SYSTEM_PROMPT =
+	"You are a browser-based code agent. Use tools to take actions. " +
+	"If the task involves DOM changes or JavaScript execution, you MUST call a tool or skill " +
+	"and never output raw code as the final response. Respond succinctly.";
 const toError = (error: unknown): Error =>
 	error instanceof Error ? error : new Error(String(error));
 const right = (event: AgentEvent): AgentStreamEvent => E.right(event);
@@ -124,6 +127,7 @@ export async function* runAgent(
 				role: "system" as const,
 				content: [
 					"Call a tool or skill when it matches the request.",
+					"Never output raw code; use tools or skills to apply changes.",
 					"If the user mentions a callable as `$name`, treat it as a suggestion (not a requirement).",
 					callablesBlock,
 				].join("\n"),
