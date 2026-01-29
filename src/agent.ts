@@ -279,6 +279,14 @@ export function createAgent(options: AgentOptions): AgentRunner {
 						if (status) {
 							yield status;
 						}
+						if (call.id) {
+							messages.push({
+								type: "function_call",
+								call_id: call.id,
+								name: call.name,
+								arguments: typeof call.args === "string" ? call.args : JSON.stringify(call.args ?? {}),
+							});
+						}
 						yield { type: "tool.start", name: call.name, args, callId: call.id };
 						try {
 							const result = await tool.run(args, baseContext);
