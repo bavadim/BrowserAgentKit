@@ -134,6 +134,7 @@ export function createOpenAIResponsesAdapter(
 ) => AsyncIterable<AgentStreamEvent> {
 	const toolChoice = options.toolChoice;
 	return async function* generate(messages: Message[], tools?: ToolDefinition[], signal?: AbortSignal) {
+		console.debug(messages);
 		const client = options.getClient ? options.getClient() : options.client;
 		if (!client) {
 			throw new Error("OpenAI client is required for the responses adapter.");
