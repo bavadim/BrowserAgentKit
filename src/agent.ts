@@ -68,12 +68,67 @@ function pruneDanglingToolCalls(messages: Message[]): void {
 	messages.splice(0, messages.length, ...filtered);
 }
 
+function formatArgsFromSchema(schema: { type?: unknown; properties?: Record<string, unknown>; required?: string[] }): string {
+	if (!schema || schema.type !== "object" || !schema.properties) {
+		return "(none)";
+	}
+	const required = new Set(schema.required ?? []);
+	const entries = Object.entries(schema.properties)
+		.map(([key, value]) => {
+			const prop = value as { type?: string | string[] };
+			const rawType = prop?.type;
+			const type = Array.isArray(rawType) ? rawType.join("|") : rawType ?? "any";
+			const reqLabel = required.has(key) ? ", required" : "";
+			return `${key} (${type}${reqLabel})`;
+		})
+		.filter(Boolean);
+	return entries.length ? entries.join("; ") : "(none)";
+}
+
+function escapeTableCell(value: string): string {
+	return value.replace(/\s+/g, " ").trim().replace(/\|/g, "\\|");
+}
+
+function renderTable(headers: string[], rows: string[][]): string {
+	if (rows.length === 0) {
+		return "";
+	}
+	const head = `| ${headers.join(" | ")} |`;
+	const sep = `| ${headers.map(() => "---").join(" | ")} |`;
+	const body = rows
+		.map((row) => `| ${row.map((cell) => escapeTableCell(cell)).join(" | ")} |`)
+		.join("\n");
+	return [head, sep, body].join("\n");
+}
+
 function formatCallables(title: string, callables: Callable[]): string {
 	if (callables.length === 0) {
 		return "";
 	}
-	const block = callables.map((callable) => callable.formatForList()).join("\n\n");
-	return `\n# ${title}\n${block}`;
+	const toolRows = callables
+		.filter(isToolCallable)
+		.map((tool) => [
+			tool.callName === tool.name ? tool.name : `${tool.name} (call: ${tool.callName})`,
+			tool.description ?? "",
+			formatArgsFromSchema(tool.inputSchema),
+		]);
+	const skillRows = callables
+		.filter(isSkillCallable)
+		.map((skill) => [
+			skill.callName === skill.name ? skill.name : `${skill.name} (call: ${skill.callName})`,
+			skill.description ?? "",
+			"task (string, required); history (array, required)",
+		]);
+	const blocks: string[] = [];
+	const toolTable = renderTable(["Name", "Description", "Args"], toolRows);
+	if (toolTable) {
+		blocks.push(`# Tools\n${toolTable}`);
+	}
+	const skillTable = renderTable(["Name", "Description", "Args"], skillRows);
+	if (skillTable) {
+		blocks.push(`# Skills\n${skillTable}`);
+	}
+	return `\n# ${title}\n${blocks.join("\n\n")}`;
 }
 
 function withSystemAfter(messages: Message[], systemMessage: Message | null): Message[] {
@@ -157,6 +212,7 @@ export async function* runAgent(
 			? {
 				role: "system" as const,
 				content: [
+					"Use the tools described below to make changes in the browser.",
 					"Call a tool or skill when it matches the request.",
 					"If the user mentions a callable as `$name`, treat it as a suggestion (not a requirement).",
 					callablesBlock,

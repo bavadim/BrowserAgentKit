@@ -434,13 +434,13 @@ const domSubtreeHtmlDescription =
 	"Return the outerHTML of the first node matching the XPath selector (scoped to view root; use '/' for root and '//' for descendants). Return an empty string if none.";
 
 const domAppendHtmlDescription =
-	"Append an HTML string as children of the node matching the XPath selector (scoped to view root; use '/' for root and '//' for descendants). Returns ok=false if no match.";
+	"Append an HTML string as children of the node matching the XPath selector (scoped to view root; use '/' for root and '//' for descendants). Use for markup only; attach events via domBindEvent. Returns ok=false if no match.";
 
 const domRemoveDescription =
 	"Remove all nodes matching the XPath selector (scoped to view root; use '/' for root and '//' for descendants). Returns ok=false if no match.";
 
 const domBindEventDescription =
-	"Attach a JS event handler to all nodes matching the XPath selector (scoped to view root; use '/' for root and '//' for descendants). Handler receives event, element, document, window, $. Returns ok=false if no match.";
+	"Attach a JS event handler to all nodes matching the XPath selector (scoped to view root; use '/' for root and '//' for descendants). Handler receives event, element, document, window, $. Use this instead of injecting <script>. Returns ok=false if no match.";
 
 const jsRunDescription =
 	"Run a JavaScript snippet inside the browser and return its result. Use jQuery ($) for DOM/event work.";
