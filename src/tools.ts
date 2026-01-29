@@ -376,7 +376,7 @@ export function jsInterpreterTool(): Tool {
 			code: { type: "string", description: "JavaScript source to evaluate." },
 			async: { type: "boolean", description: "Whether to run as async." },
 		},
-		required: ["code"],
+		required: ["code", "async"],
 		additionalProperties: false,
 	};
 	const outputSchema = {
@@ -450,7 +450,7 @@ export function domSummaryTool(): Tool {
 			maxChildren: { type: "number", description: "Maximum number of children per node." },
 			maxNodes: { type: "number", description: "Maximum number of nodes to include." },
 		},
-		required: [],
+		required: ["maxDepth", "maxChildren", "maxNodes"],
 		additionalProperties: false,
 	};
 	const outputSchema = {
@@ -681,7 +681,7 @@ export function jsRunTool(): Tool {
 			code: { type: "string", description: "JavaScript source to evaluate." },
 			async: { type: "boolean", description: "Whether to run as async." },
 		},
-		required: ["code"],
+		required: ["code", "async"],
 		additionalProperties: false,
 	};
 	const outputSchema = {

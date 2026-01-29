@@ -89,7 +89,7 @@ export class Skill {
 						},
 					},
 				},
-				required: ["task"],
+				required: ["task", "history"],
 				additionalProperties: false,
 			},
 			strict: true,
