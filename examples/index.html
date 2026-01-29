@@ -31,6 +31,7 @@
         display: flex;
         flex-direction: column;
         gap: 12px;
+        min-height: 0;
       }
       h1, h2 {
         margin: 0;
@@ -44,7 +45,7 @@
         font-weight: 600;
         margin-top: 6px;
       }
-      input, textarea {
+      input, textarea, select {
         width: 100%;
         padding: 0.5rem;
         margin-top: 0.25rem;
@@ -72,6 +73,7 @@
         border-radius: 10px;
         padding: 12px;
         min-height: 260px;
+        flex: 1 1 auto;
         background: #f9fafb;
         overflow-y: auto;
       }
@@ -157,6 +159,14 @@
           <summary>Settings</summary>
           <label for="baseUrl">Model base URL (OpenAI-compatible)</label>
           <input id="baseUrl" value="/api/llm" />
+
+          <label for="modelSelect">Model</label>
+          <select id="modelSelect">
+            <option value="gpt-5-mini">gpt-5-mini</option>
+            <option value="gpt-5.2">gpt-5.2</option>
+            <option value="gpt-5.1-codex-mini">gpt-5.1-codex-mini</option>
+            <option value="gpt-5.2-codex">gpt-5.2-codex</option>
+          </select>
 
           <label for="apiKey">API key (optional)</label>
           <input id="apiKey" placeholder="sk-... (avoid personal keys)" />

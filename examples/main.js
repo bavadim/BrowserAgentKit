@@ -19,6 +19,7 @@ const runBtn = document.getElementById("runBtn");
 const chatLog = document.getElementById("chatLog");
 const canvas = document.getElementById("canvas");
 const baseUrlInput = document.getElementById("baseUrl");
+const modelSelect = document.getElementById("modelSelect");
 const apiKeyInput = document.getElementById("apiKey");
 const promptInput = document.getElementById("prompt");
 
@@ -26,11 +27,21 @@ const params = new URLSearchParams(window.location.search);
 if (baseUrlInput && params.has("baseUrl")) {
 	baseUrlInput.value = params.get("baseUrl") ?? "";
 }
+if (modelSelect && params.has("model")) {
+	modelSelect.value = params.get("model") ?? "";
+}
 if (apiKeyInput && params.has("apiKey")) {
 	apiKeyInput.value = params.get("apiKey") ?? "";
 }
 if (promptInput && params.has("message")) {
 	promptInput.value = params.get("message") ?? "";
+}
+
+function scrollChatToBottom() {
+	if (!chatLog) {
+		return;
+	}
+	chatLog.scrollTop = chatLog.scrollHeight;
 }
 
 function addMessage(role, text) {
@@ -46,7 +57,7 @@ function addMessage(role, text) {
 
 	wrapper.appendChild(bubble);
 	chatLog.appendChild(wrapper);
-	chatLog.scrollTop = chatLog.scrollHeight;
+	scrollChatToBottom();
 }
 
 let activeAssistantBubble = null;
@@ -84,6 +95,7 @@ function appendAssistantDelta(delta) {
 	}
 	activeAssistantText += delta;
 	bubble.textContent = activeAssistantText;
+	scrollChatToBottom();
 }
 
 function finalizeAssistantMessage(text) {
@@ -95,6 +107,7 @@ function finalizeAssistantMessage(text) {
 	activeAssistantBubble = null;
 	activeAssistantText = "";
 	activeAssistantIsStatus = false;
+	scrollChatToBottom();
 }
 
 function statusLabel(status) {
@@ -132,6 +145,7 @@ function showAssistantStatus(status) {
 	bubble.textContent = label;
 	activeAssistantText = "";
 	activeAssistantIsStatus = true;
+	scrollChatToBottom();
 }
 
 function setStatus(status) {
@@ -169,10 +183,26 @@ function getClient() {
 	return client;
 }
 
-const generate = createOpenAIResponsesAdapter({
-	getClient,
-	model: "gpt-5",
-});
+let lastGenerate = { model: "", adapter: null };
+
+function getSelectedModel() {
+	const value = modelSelect?.value?.trim();
+	return value || "gpt-5-mini";
+}
+
+function getGenerate() {
+	const model = getSelectedModel();
+	if (!lastGenerate.adapter || lastGenerate.model !== model) {
+		lastGenerate = {
+			model,
+			adapter: createOpenAIResponsesAdapter({
+				getClient,
+				model,
+			}),
+		};
+	}
+	return lastGenerate.adapter;
+}
 
 const agentMessages = createAgentMessages();
 const tools = [
@@ -203,8 +233,10 @@ runBtn.addEventListener("click", async () => {
 	activeAssistantBubble = null;
 	activeAssistantText = "";
 	thinkingSummary = "";
+	showAssistantStatus({ kind: "thinking", label: "Working..." });
 
 	try {
+		const generate = getGenerate();
 		for await (const ev of withStatus(runAgent(
 			agentMessages,
 			generate,
