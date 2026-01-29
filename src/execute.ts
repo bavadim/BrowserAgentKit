@@ -35,7 +35,7 @@ export type LoopState = {
 export type StepOutcome = "continue" | "stop";
 
 export type RunAgent = (
-	messages: Message[],
+	messages: Message[] | undefined,
 	generate: AgentGenerate,
 	input: string,
 	callables?: Callable[],

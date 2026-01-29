@@ -1,6 +1,7 @@
 import { pipe } from "fp-ts/lib/function.js";
 import * as E from "fp-ts/lib/Either.js";
 import * as O from "fp-ts/lib/Option.js";
+import OpenAI from "openai";
 import type { AgentEvent, AgentStreamEvent, AgentGenerate, Message, TokenCounter, ToolDefinition } from "./types";
 
 const toError = (error: unknown): Error =>
@@ -20,11 +21,15 @@ export type OpenAIResponsesClient = {
 export type OpenAIResponsesAdapterOptions = {
 	client?: OpenAIResponsesClient;
 	getClient?: () => OpenAIResponsesClient;
+	clientOptions?: OpenAIClientOptions;
+	getClientOptions?: () => OpenAIClientOptions;
 	model: string;
 	toolChoice?: "auto" | "none" | "required";
 	responseOptions?: Record<string, unknown>;
 	contextWindowTokens?: number;
 };
+
+export type OpenAIClientOptions = ConstructorParameters<typeof OpenAI>[0];
 
 export type AgentAdapter = {
 	model: string;
@@ -176,16 +181,36 @@ function nextDelta(nextText: string, bufferRef: { value: string }): string {
 
 export function createOpenAIResponsesAdapter(options: OpenAIResponsesAdapterOptions): AgentAdapter {
 	const toolChoice = options.toolChoice;
+	let cachedClient: OpenAIResponsesClient | null = null;
+	let cachedClientKey: string | null = null;
+	const resolveClient = (): OpenAIResponsesClient => {
+		if (options.getClient) {
+			return options.getClient();
+		}
+		if (options.client) {
+			return options.client;
+		}
+		const getOptions = options.getClientOptions ?? (() => options.clientOptions);
+		const clientOptions = getOptions?.();
+		if (!clientOptions) {
+			throw new Error("OpenAI client options are required for the responses adapter.");
+		}
+		const key = JSON.stringify(clientOptions);
+		if (cachedClient && cachedClientKey === key) {
+			return cachedClient;
+		}
+		const client = new OpenAI(clientOptions) as OpenAIResponsesClient;
+		cachedClient = client;
+		cachedClientKey = key;
+		return client;
+	};
 	const generate: AgentGenerate = async function* (
 		messages: Message[],
 		tools?: ToolDefinition[],
 		signal?: AbortSignal
 	) {
 		console.debug(messages);
-		const client = options.getClient ? options.getClient() : options.client;
-		if (!client) {
-			throw new Error("OpenAI client is required for the responses adapter.");
-		}
+		const client = resolveClient();
 		const stream = await client.responses.create(
 			{
 				model: options.model,

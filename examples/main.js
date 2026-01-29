@@ -1,4 +1,3 @@
-import OpenAI from "openai";
 import * as E from "fp-ts/lib/Either.js";
 import {
 	createOpenAIResponsesAdapter,
@@ -175,23 +174,6 @@ function appendThinkingDelta(delta) {
 
 const skills = [Skill.fromDomSelector("//script[@id='skill-canvas-render']", document)];
 
-let lastClientConfig = { baseUrl: "", apiKey: "" };
-let client = null;
-
-function getClient() {
-	const baseUrl = baseUrlInput?.value.trim() ?? "";
-	const apiKey = apiKeyInput?.value.trim() ?? "";
-	if (!client || baseUrl !== lastClientConfig.baseUrl || apiKey !== lastClientConfig.apiKey) {
-		client = new OpenAI({
-			baseURL: baseUrl,
-			apiKey: apiKey || undefined,
-			dangerouslyAllowBrowser: true,
-		});
-		lastClientConfig = { baseUrl, apiKey };
-	}
-	return client;
-}
-
 let lastAdapter = { model: "", adapter: null };
 
 function getSelectedModel() {
@@ -205,7 +187,15 @@ function getAdapter() {
 		lastAdapter = {
 			model,
 			adapter: createOpenAIResponsesAdapter({
-				getClient,
+				getClientOptions: () => {
+					const baseUrl = baseUrlInput?.value.trim() ?? "";
+					const apiKey = apiKeyInput?.value.trim() ?? "";
+					return {
+						baseURL: baseUrl,
+						apiKey: apiKey || undefined,
+						dangerouslyAllowBrowser: true,
+					};
+				},
 				model,
 			}),
 		};

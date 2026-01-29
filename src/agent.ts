@@ -224,7 +224,7 @@ export function createAgentMessages(): Message[] {
 }
 
 export async function* runAgent(
-	messages: Message[],
+	messages: Message[] | undefined,
 	generate: AgentGenerate,
 	input: string,
 	callables: Callable[] = [],
@@ -233,17 +233,18 @@ export async function* runAgent(
 	signal?: AbortSignal,
 	options?: RunAgentOptions
 ): AsyncGenerator<AgentStreamEvent, void, void> {
+	const history = messages ?? createAgentMessages();
 	const skipActiveRuns = options?.skipActiveRuns ?? false;
 	const skillDepth = options?.skillDepth ?? 0;
 	const hasCallableListOverride = options?.callableListMessage !== undefined;
 	const controller = skipActiveRuns ? null : new AbortController();
 	const runSignal = controller?.signal ?? signal;
 	if (!skipActiveRuns) {
-		const previous = activeRuns.get(messages);
+		const previous = activeRuns.get(history);
 		if (previous) {
 			previous.abort(new Error("Superseded by a new request."));
 		}
-		activeRuns.set(messages, controller as AbortController);
+		activeRuns.set(history, controller as AbortController);
 		if (signal) {
 			if (signal.aborted) {
 				controller?.abort(signal.reason);
@@ -275,23 +276,23 @@ export async function* runAgent(
 		window: context?.window ?? (hasWindow ? window : undefined),
 		signal: runSignal,
 	};
-	pruneDanglingToolCalls(messages);
+	pruneDanglingToolCalls(history);
 	if ((options?.skillDepth ?? 0) === 0) {
 		const tokenCounter = options?.tokenCounter;
 		if (tokenCounter) {
-			const projectedMessages: Message[] = [...messages, { role: "user", content: input }];
+			const projectedMessages: Message[] = [...history, { role: "user", content: input }];
 			const contextWindow = options?.contextWindowTokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS;
 			const threshold = options?.compactThreshold ?? DEFAULT_COMPACT_THRESHOLD;
 			const tokenCount = await Promise.resolve(tokenCounter(projectedMessages, options?.model));
 			if (tokenCount >= contextWindow * threshold) {
-				const compacted = compactHistory(messages);
-				if (compacted !== messages) {
-					messages.splice(0, messages.length, ...compacted);
+				const compacted = compactHistory(history);
+				if (compacted !== history) {
+					history.splice(0, history.length, ...compacted);
 				}
 			}
 		}
 	}
-	messages.push({ role: "user", content: input });
+	history.push({ role: "user", content: input });
 	let sawError = false;
 	const callableMap = new Map<string, Callable>();
 	for (const callable of callables) {
@@ -333,7 +334,7 @@ export async function* runAgent(
 			}
 			step += 1;
 			const stepState = initLoopState();
-			const promptMessages = withSystemAfter(messages, rootCallableListMessage);
+			const promptMessages = withSystemAfter(history, rootCallableListMessage);
 			const stream = await generate(promptMessages, toolDefs, runSignal);
 			let stop = false;
 
@@ -369,7 +370,7 @@ export async function* runAgent(
 					}
 
 					const args = normalizeToolArgs(call.args);
-					addToolCall(messages, call);
+					addToolCall(history, call);
 
 					const resolved = resolveTarget(call, args);
 					if (E.isLeft(resolved)) {
@@ -388,7 +389,7 @@ export async function* runAgent(
 						generate,
 						runAgent,
 						BASE_SYSTEM_PROMPT,
-						messages
+						history
 					);
 					let outcome: StreamOutcome = "continue";
 					while (true) {
@@ -417,7 +418,7 @@ export async function* runAgent(
 
 			const content = finalContent(stepState);
 			if (content) {
-				messages.push({ role: "assistant", content });
+				history.push({ role: "assistant", content });
 				if (!stepState.sawMessage) {
 					yield right({ type: "message", content });
 				}
@@ -427,8 +428,8 @@ export async function* runAgent(
 			break;
 		}
 	} finally {
-		if (!skipActiveRuns && controller && activeRuns.get(messages) === controller) {
-			activeRuns.delete(messages);
+		if (!skipActiveRuns && controller && activeRuns.get(history) === controller) {
+			activeRuns.delete(history);
 		}
 	}
 	if (!sawError) {

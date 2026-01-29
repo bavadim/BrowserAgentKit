@@ -19,7 +19,6 @@ npm i browseragentkit
 ## Quick start
 
 ```ts
-import OpenAI from "openai";
 import * as E from "fp-ts/lib/Either.js";
 import {
   createAgentMessages,
@@ -28,12 +27,6 @@ import {
   runAgent,
   Skill,
 } from "browseragentkit";
-
-const client = new OpenAI({
-  baseURL: "/api/llm", // your backend proxy
-  apiKey: "sk-...", // DANGEROUS! DO NOT PASS YOUR OWN KEY
-  dangerouslyAllowBrowser: true,
-});
 
 // Somewhere in your HTML:
 // <script type="text/markdown" id="skill-canvas-render">
@@ -56,8 +49,12 @@ const client = new OpenAI({
 const skills = [Skill.fromDomSelector("//script[@id='skill-canvas-render']", document)];
 
 const adapter = createOpenAIResponsesAdapter({
-  client,
   model: "gpt-4.1-mini",
+  clientOptions: {
+    baseURL: "/api/llm", // your backend proxy
+    apiKey: "sk-...", // DANGEROUS! DO NOT PASS YOUR OWN KEY
+    dangerouslyAllowBrowser: true,
+  },
 });
 
 // Adapter shape:
@@ -238,6 +235,7 @@ You can prefill demo fields via query params:
 ## Agent API (async generator)
 
 `runAgent(messages, generate, input, callables?, maxSteps?, context?, signal?, options?)` returns an async generator of `Either<Error, AgentEvent>`.
+If you don’t need persistent history, pass `undefined` for `messages` and the agent will create a fresh system prompt for the run.
 
 Context compaction options (main cycle only):
 - `tokenCounter`: function to count tokens for the current model.
