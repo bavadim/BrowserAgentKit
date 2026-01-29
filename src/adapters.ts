@@ -1,7 +1,13 @@
 import { pipe } from "fp-ts/lib/function.js";
+import * as E from "fp-ts/lib/Either.js";
 import * as O from "fp-ts/lib/Option.js";
 import { AgentStatusKind } from "./types";
-import type { AgentEvent, Message, ToolDefinition } from "./types";
+import type { AgentEvent, AgentStreamEvent, Message, ToolDefinition } from "./types";
+
+const toError = (error: unknown): Error =>
+	error instanceof Error ? error : new Error(String(error));
+const right = (event: AgentEvent): AgentStreamEvent => E.right(event);
+const left = (error: Error): AgentStreamEvent => E.left(error);
 
 export type OpenAIResponsesClient = {
 	responses: {
@@ -122,7 +128,11 @@ function nextDelta(nextText: string, bufferRef: { value: string }): string {
 
 export function createOpenAIResponsesAdapter(
 	options: OpenAIResponsesAdapterOptions
-): (messages: Message[], tools?: ToolDefinition[], signal?: AbortSignal) => AsyncIterable<AgentEvent> {
+): (
+	messages: Message[],
+	tools?: ToolDefinition[],
+	signal?: AbortSignal
+) => AsyncIterable<AgentStreamEvent> {
 	const toolChoice = options.toolChoice;
 	return async function* generate(messages: Message[], tools?: ToolDefinition[], signal?: AbortSignal) {
 		const client = options.getClient ? options.getClient() : options.client;
@@ -168,20 +178,20 @@ export function createOpenAIResponsesAdapter(
 				case "response.queued":
 				case "response.created":
 				case "response.in_progress":
-					yield { type: "status", status: { kind: AgentStatusKind.Thinking } };
+					yield right({ type: "status", status: { kind: AgentStatusKind.Thinking } });
 					break;
 				case "response.output_text.delta": {
 					const delta = event.delta ?? "";
 					textBufferRef.value += delta;
 					if (delta) {
-						yield { type: "message.delta", delta };
+						yield right({ type: "message.delta", delta });
 					}
 					break;
 				}
 				case "response.output_text.done": {
 					const delta = nextDelta(event.text ?? "", textBufferRef);
 					if (delta) {
-						yield { type: "message.delta", delta };
+						yield right({ type: "message.delta", delta });
 					}
 					break;
 				}
@@ -189,14 +199,14 @@ export function createOpenAIResponsesAdapter(
 					const delta = event.delta ?? "";
 					summaryBufferRef.value += delta;
 					if (delta) {
-						yield { type: "thinking.delta", delta };
+						yield right({ type: "thinking.delta", delta });
 					}
 					break;
 				}
 				case "response.reasoning_summary_text.done": {
 					const delta = nextDelta(event.text ?? "", summaryBufferRef);
 					if (delta) {
-						yield { type: "thinking.delta", delta };
+						yield right({ type: "thinking.delta", delta });
 					}
 					break;
 				}
@@ -213,7 +223,7 @@ export function createOpenAIResponsesAdapter(
 					);
 					const delta = nextDelta(combined, summaryBufferRef);
 					if (delta) {
-						yield { type: "thinking.delta", delta };
+						yield right({ type: "thinking.delta", delta });
 					}
 					break;
 				}
@@ -228,7 +238,7 @@ export function createOpenAIResponsesAdapter(
 						);
 						const delta = nextDelta(combined, textBufferRef);
 						if (delta) {
-							yield { type: "message.delta", delta };
+							yield right({ type: "message.delta", delta });
 						}
 					}
 					if (event.part?.type === "refusal") {
@@ -240,7 +250,7 @@ export function createOpenAIResponsesAdapter(
 						);
 						const delta = nextDelta(combined, textBufferRef);
 						if (delta) {
-							yield { type: "message.delta", delta };
+							yield right({ type: "message.delta", delta });
 						}
 					}
 					break;
@@ -249,14 +259,14 @@ export function createOpenAIResponsesAdapter(
 					const delta = event.delta ?? "";
 					textBufferRef.value += delta;
 					if (delta) {
-						yield { type: "message.delta", delta };
+						yield right({ type: "message.delta", delta });
 					}
 					break;
 				}
 				case "response.refusal.done": {
 					const delta = nextDelta(event.refusal ?? "", textBufferRef);
 					if (delta) {
-						yield { type: "message.delta", delta };
+						yield right({ type: "message.delta", delta });
 					}
 					break;
 				}
@@ -271,7 +281,7 @@ export function createOpenAIResponsesAdapter(
 					if (stored?.callId && stored?.name) {
 						const toolStart = getToolStart(stored.callId, stored.name, args);
 						if (toolStart) {
-							yield toolStart;
+							yield right(toolStart);
 						}
 					} else if (event.name) {
 						pendingCalls.set(event.item_id ?? "", { name: event.name, args });
@@ -279,11 +289,11 @@ export function createOpenAIResponsesAdapter(
 					break;
 				}
 				case "response.failed":
-					yield { type: "error", error: event.error ?? new Error("Response failed") };
-					break;
+					yield left(toError(event.error ?? new Error("Response failed")));
+					return;
 				case "error":
-					yield { type: "error", error: event.error };
-					break;
+					yield left(toError(event.error));
+					return;
 				case "response.audio.delta":
 				case "response.audio.done":
 				case "response.completed":
@@ -293,13 +303,13 @@ export function createOpenAIResponsesAdapter(
 					if (event.item?.type === "message") {
 						const delta = nextDelta(outputItemText(event.item), textBufferRef);
 						if (delta) {
-							yield { type: "message.delta", delta };
+							yield right({ type: "message.delta", delta });
 						}
 					}
 					if (event.item?.type === "reasoning") {
 						const delta = nextDelta(summaryFromItem(event.item), summaryBufferRef);
 						if (delta) {
-							yield { type: "thinking.delta", delta };
+							yield right({ type: "thinking.delta", delta });
 						}
 					}
 					if (event.item?.type === "function_call") {
@@ -320,7 +330,7 @@ export function createOpenAIResponsesAdapter(
 							if (event.type === "response.output_item.done") {
 								const toolStart = getToolStart(callId, name, args);
 								if (toolStart) {
-									yield toolStart;
+									yield right(toolStart);
 								}
 							}
 						}

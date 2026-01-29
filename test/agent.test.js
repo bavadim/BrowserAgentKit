@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
+import * as E from "fp-ts/lib/Either.js";
 import { createAgentMessages, runAgent } from "../dist/index.js";
 
 async function collectEvents(generator) {
@@ -11,14 +12,22 @@ async function collectEvents(generator) {
 	return events;
 }
 
-function runAgentEvents(messages, options, input) {
-	return collectEvents(runAgent(messages, options, input));
+function rightEvents(events) {
+	return events.filter(E.isRight).map((event) => event.right);
+}
+
+function leftErrors(events) {
+	return events.filter(E.isLeft).map((event) => event.left);
+}
+
+function runAgentEvents(messages, generate, input, tools, skills, maxSteps, context, signal) {
+	return collectEvents(runAgent(messages, generate, input, tools, skills, maxSteps, context, signal));
 }
 
 function streamFrom(events) {
 	return (async function* () {
 		for (const event of events) {
-			yield event;
+			yield E.right(event);
 		}
 	})();
 }
@@ -33,12 +42,12 @@ test("streams text and thinking summary", async () => {
 		]);
 
 	const messages = createAgentMessages();
-	const options = { generate };
-	const events = await runAgentEvents(messages, options, "hi");
+	const events = await runAgentEvents(messages, generate, "hi");
+	const rights = rightEvents(events);
 
-	const deltaEvent = events.find((ev) => ev.type === "message.delta");
-	const messageEvent = events.find((ev) => ev.type === "message");
-	const thinkingEvent = events.find((ev) => ev.type === "thinking");
+	const deltaEvent = rights.find((ev) => ev.type === "message.delta");
+	const messageEvent = rights.find((ev) => ev.type === "message");
+	const thinkingEvent = rights.find((ev) => ev.type === "thinking");
 	assert.ok(deltaEvent);
 	assert.ok(messageEvent);
 	assert.ok(thinkingEvent);
@@ -53,10 +62,10 @@ test("accepts async generate that resolves to a stream", async () => {
 	};
 
 	const messages = createAgentMessages();
-	const options = { generate };
-	const events = await runAgentEvents(messages, options, "hi");
+	const events = await runAgentEvents(messages, generate, "hi");
+	const rights = rightEvents(events);
 
-	assert.ok(events.some((ev) => ev.type === "message" && ev.content === "ok"));
+	assert.ok(rights.some((ev) => ev.type === "message" && ev.content === "ok"));
 });
 
 test("runs tools when requested", async () => {
@@ -91,12 +100,12 @@ test("runs tools when requested", async () => {
 	};
 
 	const messages = createAgentMessages();
-	const options = { generate, tools: [tool] };
-	const events = await runAgentEvents(messages, options, "test");
+	const events = await runAgentEvents(messages, generate, "test", [tool]);
+	const rights = rightEvents(events);
 
-	assert.ok(events.some((ev) => ev.type === "tool.start" && ev.name === "echo"));
-	assert.ok(events.some((ev) => ev.type === "tool.end" && ev.name === "echo"));
-	assert.ok(events.some((ev) => ev.type === "message" && ev.content === "done"));
+	assert.ok(rights.some((ev) => ev.type === "tool.start" && ev.name === "echo"));
+	assert.ok(rights.some((ev) => ev.type === "tool.end" && ev.name === "echo"));
+	assert.ok(rights.some((ev) => ev.type === "message" && ev.content === "done"));
 });
 
 test("emits error for unknown tool", async () => {
@@ -117,11 +126,10 @@ test("emits error for unknown tool", async () => {
 	};
 
 	const messages = createAgentMessages();
-	const options = { generate, tools: [] };
-	const events = await runAgentEvents(messages, options, "test");
+	const events = await runAgentEvents(messages, generate, "test", []);
+	const errors = leftErrors(events);
 
-	assert.ok(events.some((ev) => ev.type === "error"));
-	assert.ok(events.some((ev) => ev.type === "message" && ev.content === "done"));
+	assert.ok(errors.length > 0);
 });
 
 test("emits error when tool throws", async () => {
@@ -151,11 +159,10 @@ test("emits error when tool throws", async () => {
 	};
 
 	const messages = createAgentMessages();
-	const options = { generate, tools: [tool] };
-	const events = await runAgentEvents(messages, options, "test");
+	const events = await runAgentEvents(messages, generate, "test", [tool]);
+	const errors = leftErrors(events);
 
-	assert.ok(events.some((ev) => ev.type === "error"));
-	assert.ok(events.some((ev) => ev.type === "message" && ev.content === "done"));
+	assert.ok(errors.length > 0);
 });
 
 test("stops after maxSteps", async () => {
@@ -182,12 +189,12 @@ test("stops after maxSteps", async () => {
 	};
 
 	const messages = createAgentMessages();
-	const options = { generate, tools: [tool], maxSteps: 2 };
-	const events = await runAgentEvents(messages, options, "test");
+	const events = await runAgentEvents(messages, generate, "test", [tool], [], 2);
+	const rights = rightEvents(events);
 
 	assert.equal(calls, 2);
-	assert.ok(events.some((ev) => ev.type === "done"));
-	assert.ok(!events.some((ev) => ev.type === "message"));
+	assert.ok(rights.some((ev) => ev.type === "done"));
+	assert.ok(!rights.some((ev) => ev.type === "message"));
 });
 
 test("parses JSON tool args", async () => {
@@ -217,10 +224,10 @@ test("parses JSON tool args", async () => {
 	};
 
 	const messages = createAgentMessages();
-	const options = { generate, tools: [tool] };
-	const events = await runAgentEvents(messages, options, "test");
+	const events = await runAgentEvents(messages, generate, "test", [tool]);
+	const rights = rightEvents(events);
 
-	const startEvent = events.find((ev) => ev.type === "tool.start");
+	const startEvent = rights.find((ev) => ev.type === "tool.start");
 	assert.deepEqual(startEvent?.args, { value: "ok" });
 });
 
@@ -251,10 +258,10 @@ test("preserves non-JSON tool args", async () => {
 	};
 
 	const messages = createAgentMessages();
-	const options = { generate, tools: [tool] };
-	const events = await runAgentEvents(messages, options, "test");
+	const events = await runAgentEvents(messages, generate, "test", [tool]);
+	const rights = rightEvents(events);
 
-	const startEvent = events.find((ev) => ev.type === "tool.start");
+	const startEvent = rights.find((ev) => ev.type === "tool.start");
 	assert.equal(startEvent?.args, "not json");
 });
 
@@ -264,11 +271,10 @@ test("reports model errors", async () => {
 	};
 
 	const messages = createAgentMessages();
-	const options = { generate };
-	const events = await runAgentEvents(messages, options, "test");
+	const events = await runAgentEvents(messages, generate, "test");
+	const errors = leftErrors(events);
 
-	assert.ok(events.some((ev) => ev.type === "error"));
-	assert.ok(events.some((ev) => ev.type === "done"));
+	assert.ok(errors.length > 0);
 });
 
 test("reset clears history between runs", async () => {
@@ -279,10 +285,9 @@ test("reset clears history between runs", async () => {
 	};
 
 	let messages = createAgentMessages();
-	const options = { generate };
-	await runAgentEvents(messages, options, "one");
+	await runAgentEvents(messages, generate, "one");
 	messages = createAgentMessages();
-	await runAgentEvents(messages, options, "two");
+	await runAgentEvents(messages, generate, "two");
 
 	assert.equal(lengths[0], 2);
 	assert.equal(lengths[1], 2);
@@ -300,18 +305,18 @@ test("new run aborts previous run", async () => {
 			}
 			return;
 		}
-		yield { type: "message", content: "ok" };
+		yield E.right({ type: "message", content: "ok" });
 	};
 
 	const messages = createAgentMessages();
-	const options = { generate };
-	const firstRun = collectEvents(runAgent(messages, options, "one"));
-	const secondRun = collectEvents(runAgent(messages, options, "two"));
+	const firstRun = collectEvents(runAgent(messages, generate, "one"));
+	const secondRun = collectEvents(runAgent(messages, generate, "two"));
 	const [firstEvents, secondEvents] = await Promise.all([firstRun, secondRun]);
+	const secondRights = rightEvents(secondEvents);
 
 	assert.ok(firstSignal?.aborted);
-	assert.ok(firstEvents.some((ev) => ev.type === "done"));
-	assert.ok(secondEvents.some((ev) => ev.type === "message" && ev.content === "ok"));
+	assert.ok(rightEvents(firstEvents).some((ev) => ev.type === "done"));
+	assert.ok(secondRights.some((ev) => ev.type === "message" && ev.content === "ok"));
 });
 
 test("root cycle inserts skill list message", async () => {
@@ -322,18 +327,15 @@ test("root cycle inserts skill list message", async () => {
 	};
 
 	const messages = createAgentMessages();
-	const options = {
-		generate,
-		skills: [
-			{
-				name: "demo.skill",
-				description: "Demo skill.",
-				promptSelector: "//script[@id='skill']",
-			},
-		],
-	};
+	const skills = [
+		{
+			name: "demo.skill",
+			description: "Demo skill.",
+			promptSelector: "//script[@id='skill']",
+		},
+	];
 
-	await runAgentEvents(messages, options, "hi");
+	await runAgentEvents(messages, generate, "hi", [], skills);
 
 	assert.ok(seenMessages);
 	assert.equal(seenMessages[0].role, "system");
@@ -348,20 +350,24 @@ test("root cycle inserts skill list message", async () => {
 test("model can ignore $skill hints", async () => {
 	const generate = () => streamFrom([{ type: "message", content: "ok" }]);
 	const messages = createAgentMessages();
-	const options = {
-		generate,
-		skills: [
-			{
-				name: "demo.skill",
-				description: "Demo skill.",
-				promptSelector: "//script[@id='skill']",
-			},
-		],
-	};
+	const skills = [
+		{
+			name: "demo.skill",
+			description: "Demo skill.",
+			promptSelector: "//script[@id='skill']",
+		},
+	];
 
-	const events = await runAgentEvents(messages, options, "Please do $demo.skill if needed");
-	assert.ok(!events.some((ev) => ev.type === "tool.start"));
-	assert.ok(events.some((ev) => ev.type === "message" && ev.content === "ok"));
+	const events = await runAgentEvents(
+		messages,
+		generate,
+		"Please do $demo.skill if needed",
+		[],
+		skills
+	);
+	const rights = rightEvents(events);
+	assert.ok(!rights.some((ev) => ev.type === "tool.start"));
+	assert.ok(rights.some((ev) => ev.type === "message" && ev.content === "ok"));
 });
 
 test("skill call builds child history and isolates parent", async () => {
@@ -394,19 +400,16 @@ test("skill call builds child history and isolates parent", async () => {
 	};
 
 	const messages = createAgentMessages();
-	const options = {
-		generate,
-		skills: [
-			{
-				name: "dom.skill",
-				description: "Reads prompt from DOM.",
-				promptSelector: "//script[@id='skill']",
-			},
-		],
-		context: { document: dom.window.document, window: dom.window },
-	};
+	const skills = [
+		{
+			name: "dom.skill",
+			description: "Reads prompt from DOM.",
+			promptSelector: "//script[@id='skill']",
+		},
+	];
+	const context = { document: dom.window.document, window: dom.window };
 
-	await runAgentEvents(messages, options, "hi");
+	await runAgentEvents(messages, generate, "hi", [], skills, undefined, context);
 
 	const childMessages = snapshots[1];
 	assert.equal(childMessages[0].role, "system");
@@ -451,19 +454,16 @@ test("skill prompt sanitizes HTML to markdown", async () => {
 	};
 
 	const messages = createAgentMessages();
-	const options = {
-		generate,
-		skills: [
-			{
-				name: "dom.skill",
-				description: "Reads prompt from DOM.",
-				promptSelector: "//script[@id='skill']",
-			},
-		],
-		context: { document: dom.window.document, window: dom.window },
-	};
+	const skills = [
+		{
+			name: "dom.skill",
+			description: "Reads prompt from DOM.",
+			promptSelector: "//script[@id='skill']",
+		},
+	];
+	const context = { document: dom.window.document, window: dom.window };
 
-	await runAgentEvents(messages, options, "hi");
+	await runAgentEvents(messages, generate, "hi", [], skills, undefined, context);
 
 	const systemMessages = childMessages.filter((message) => message.role === "system");
 	assert.equal(systemMessages.length, 2);
@@ -494,22 +494,20 @@ test("skill prompt empty after sanitization emits error", async () => {
 	};
 
 	const messages = createAgentMessages();
-	const options = {
-		generate,
-		skills: [
-			{
-				name: "dom.skill",
-				description: "Reads prompt from DOM.",
-				promptSelector: "//script[@id='skill']",
-			},
-		],
-		context: { document: dom.window.document, window: dom.window },
-	};
+	const skills = [
+		{
+			name: "dom.skill",
+			description: "Reads prompt from DOM.",
+			promptSelector: "//script[@id='skill']",
+		},
+	];
+	const context = { document: dom.window.document, window: dom.window };
 
-	const events = await runAgentEvents(messages, options, "hi");
+	const events = await runAgentEvents(messages, generate, "hi", [], skills, undefined, context);
+	const errors = leftErrors(events);
 
-	assert.equal(callCount, 2);
-	assert.ok(events.some((ev) => ev.type === "error"));
+	assert.equal(callCount, 1);
+	assert.ok(errors.length > 0);
 });
 
 test("skill call args are validated", async () => {
@@ -530,21 +528,19 @@ test("skill call args are validated", async () => {
 	};
 
 	const messages = createAgentMessages();
-	const options = {
-		generate,
-		skills: [
-			{
-				name: "bad.skill",
-				description: "Needs task.",
-				promptSelector: "//script[@id='skill']",
-			},
-		],
-	};
+	const skills = [
+		{
+			name: "bad.skill",
+			description: "Needs task.",
+			promptSelector: "//script[@id='skill']",
+		},
+	];
 
-	const events = await runAgentEvents(messages, options, "hi");
+	const events = await runAgentEvents(messages, generate, "hi", [], skills);
+	const errors = leftErrors(events);
 
-	assert.equal(callCount, 2);
-	assert.ok(events.some((ev) => ev.type === "error"));
+	assert.equal(callCount, 1);
+	assert.ok(errors.length > 0);
 });
 
 test("child scope limits tools and skills", async () => {
@@ -602,23 +598,19 @@ test("child scope limits tools and skills", async () => {
 	};
 
 	const messages = createAgentMessages();
-	const options = {
-		generate,
-		tools: [rootTool],
-		skills: [
-			{
-				name: "parent.skill",
-				description: "Parent skill.",
-				promptSelector: "//script[@id='parent']",
-				allowedSkills: [childSkill],
-				tools: [childTool],
-			},
-			otherSkill,
-		],
-		context: { document: dom.window.document, window: dom.window },
-	};
+	const skills = [
+		{
+			name: "parent.skill",
+			description: "Parent skill.",
+			promptSelector: "//script[@id='parent']",
+			allowedSkills: [childSkill],
+			tools: [childTool],
+		},
+		otherSkill,
+	];
+	const context = { document: dom.window.document, window: dom.window };
 
-	await runAgentEvents(messages, options, "hi");
+	await runAgentEvents(messages, generate, "hi", [rootTool], skills, undefined, context);
 
 	const childToolNames = childTools.map((tool) => tool.name).sort();
 	assert.deepEqual(childToolNames, ["child.skill", "child.tool"]);
@@ -660,29 +652,27 @@ test("skill events include depth and input for nested calls", async () => {
 	};
 
 	const messages = createAgentMessages();
-	const options = {
-		generate,
-		skills: [
-			{
-				name: "parent.skill",
-				description: "Parent skill.",
-				promptSelector: "//script[@id='parent']",
-				allowedSkills: [
-					{
-						name: "child.skill",
-						description: "Child skill.",
-						promptSelector: "//script[@id='child']",
-					},
-				],
-			},
-		],
-		context: { document: dom.window.document, window: dom.window },
-	};
+	const skills = [
+		{
+			name: "parent.skill",
+			description: "Parent skill.",
+			promptSelector: "//script[@id='parent']",
+			allowedSkills: [
+				{
+					name: "child.skill",
+					description: "Child skill.",
+					promptSelector: "//script[@id='child']",
+				},
+			],
+		},
+	];
+	const context = { document: dom.window.document, window: dom.window };
 
-	const events = await runAgentEvents(messages, options, "hi");
+	const events = await runAgentEvents(messages, generate, "hi", [], skills, undefined, context);
+	const rights = rightEvents(events);
 
-	const skillStarts = events.filter((ev) => ev.type === "tool.start" && ev.isSkill);
-	const skillEnds = events.filter((ev) => ev.type === "tool.end" && ev.isSkill);
+	const skillStarts = rights.filter((ev) => ev.type === "tool.start" && ev.isSkill);
+	const skillEnds = rights.filter((ev) => ev.type === "tool.end" && ev.isSkill);
 
 	assert.equal(skillStarts.length, 2);
 	assert.equal(skillEnds.length, 2);
@@ -703,15 +693,6 @@ test("status events cover main states", async () => {
 				return streamFrom([
 					{
 						type: "tool.start",
-						name: "explode",
-						args: "{}",
-						callId: "call-1",
-					},
-				]);
-			case 2:
-				return streamFrom([
-					{
-						type: "tool.start",
 						name: "echo",
 						args: "{}",
 						callId: "call-2",
@@ -725,14 +706,6 @@ test("status events cover main states", async () => {
 		}
 	};
 
-	const explodeTool = {
-		name: "explode",
-		description: "Throws.",
-		parameters: { type: "object", additionalProperties: false },
-		run() {
-			throw new Error("boom");
-		},
-	};
 	const echoTool = {
 		name: "echo",
 		description: "Echoes.",
@@ -743,13 +716,12 @@ test("status events cover main states", async () => {
 	};
 
 	const messages = createAgentMessages();
-	const options = { generate, tools: [explodeTool, echoTool] };
-	const events = await runAgentEvents(messages, options, "hi");
+	const events = await runAgentEvents(messages, generate, "hi", [echoTool]);
+	const rights = rightEvents(events);
 
-	const statusKinds = new Set(events.filter((ev) => ev.type === "status").map((ev) => ev.status.kind));
+	const statusKinds = new Set(rights.filter((ev) => ev.type === "status").map((ev) => ev.status.kind));
 	assert.ok(statusKinds.has("thinking"));
 	assert.ok(statusKinds.has("calling_tool"));
 	assert.ok(statusKinds.has("tool_result"));
 	assert.ok(statusKinds.has("done"));
-	assert.ok(statusKinds.has("error"));
 });

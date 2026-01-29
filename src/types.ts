@@ -3,6 +3,7 @@ import type {
 	ResponseInputItem,
 	Tool as ResponseTool,
 } from "openai/resources/responses/responses";
+import type { Either } from "fp-ts/lib/Either.js";
 
 export type JsonSchema = {
 	type: string;
@@ -55,7 +56,6 @@ export enum AgentStatusKind {
 	CallingTool = "calling_tool",
 	ToolResult = "tool_result",
 	Done = "done",
-	Error = "error",
 }
 
 export type AgentStatus = {
@@ -101,14 +101,12 @@ export type AgentEvent =
 	| ToolStart
 	| ToolEnd
 	| { type: "artifact"; name: string; data: unknown }
-	| { type: "error"; error: unknown }
 	| { type: "done" };
 
-export type AgentOptions = {
-	generate: (messages: Message[], tools?: ToolDefinition[], signal?: AbortSignal) => AsyncIterable<AgentEvent>;
-	viewRoot?: Element;
-	context?: Partial<ToolContext>;
-	skills?: Skill[];
-	tools?: Tool[];
-	maxSteps?: number;
-};
+export type AgentStreamEvent = Either<Error, AgentEvent>;
+
+export type AgentGenerate = (
+	messages: Message[],
+	tools?: ToolDefinition[],
+	signal?: AbortSignal
+) => AsyncIterable<AgentStreamEvent>;

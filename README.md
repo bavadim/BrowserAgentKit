@@ -22,6 +22,7 @@ npm i browseragentkit
 
 ```ts
 import OpenAI from "openai";
+import * as E from "fp-ts/lib/Either.js";
 import {
   createAgentMessages,
   createOpenAIResponsesAdapter,
@@ -64,24 +65,31 @@ const generate = createOpenAIResponsesAdapter({
 });
 
 const agentMessages = createAgentMessages();
-const agentOptions = {
-  generate,
-  viewRoot: document.getElementById("canvas"),
-  skills,
-  tools: [
-    jsInterpreterTool(),
-    localStoreTool({ namespace: "bak" }),
-  ],
-  maxSteps: 25,
-};
+const tools = [
+  jsInterpreterTool(),
+  localStoreTool({ namespace: "bak" }),
+];
+const agentContext = { viewRoot: document.getElementById("canvas") };
 
-for await (const ev of runAgent(agentMessages, agentOptions, "Create a hero section on the canvas")) {
+for await (const ev of runAgent(
+  agentMessages,
+  generate,
+  "Create a hero section on the canvas",
+  tools,
+  skills,
+  25,
+  agentContext
+)) {
+  if (E.isLeft(ev)) {
+    console.error(ev.left);
+    continue;
+  }
   // handle events in your UI / logs
-  console.log(ev);
+  console.log(ev.right);
 }
 ```
 
-`generate(messages, tools, signal)` must return (or resolve to) an `AsyncIterable` of `AgentEvent` objects. When using the OpenAI Responses stream, you can reuse `createOpenAIResponsesAdapter` from the library (see above or `examples/main.js`).
+`generate(messages, tools, signal)` must return (or resolve to) an `AsyncIterable` of `Either<Error, AgentEvent>` objects. When using the OpenAI Responses stream, you can reuse `createOpenAIResponsesAdapter` from the library (see above or `examples/main.js`).
 The agent preserves conversation history across runs; create a fresh `createAgentMessages()` array to clear it (system prompt is kept).
 If `runAgent()` is called again with the same messages array, the previous run is aborted.
 
@@ -166,7 +174,7 @@ You can prefill demo fields via query params:
 
 ## Agent API (async generator)
 
-`runAgent(messages, options, input)` returns an async generator of events.
+`runAgent(messages, generate, input, tools?, skills?, maxSteps?, context?, signal?)` returns an async generator of `Either<Error, AgentEvent>`.
 
 Typical event kinds:
 
@@ -174,16 +182,18 @@ Typical event kinds:
 * `thinking.delta` / `thinking` (reasoning summary text, when available)
 * `tool.start` / `tool.end`
 * `artifact`
-* `error`
 * `done`
 
 Consume it with:
 
 ```ts
 const agentMessages = createAgentMessages();
-const agentOptions = { generate, tools: [], skills: [] };
 
-for await (const ev of runAgent(agentMessages, agentOptions, "...")) {
+for await (const ev of runAgent(agentMessages, generate, "...")) {
+  if (E.isLeft(ev)) {
+    console.error(ev.left);
+    break;
+  }
   // update UI / state
 }
 ```

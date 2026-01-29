@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import * as E from "fp-ts/lib/Either.js";
 import {
 	createOpenAIResponsesAdapter,
 	createAgentMessages,
@@ -100,8 +101,6 @@ function statusLabel(status) {
 			return status.toolName ? `Вызываю ${status.toolName}...` : "Вызываю инструмент...";
 		case "tool_result":
 			return status.toolName ? `Получен ответ от ${status.toolName}.` : "Получен ответ от инструмента.";
-		case "error":
-			return "Ошибка.";
 		default:
 			return "";
 	}
@@ -175,13 +174,8 @@ const generate = createOpenAIResponsesAdapter({
 });
 
 const agentMessages = createAgentMessages();
-const agentOptions = {
-	generate,
-	viewRoot: canvas,
-	skills,
-	tools: [jsInterpreterTool(), localStoreTool({ namespace: "bak" })],
-	maxSteps: 25,
-};
+const tools = [jsInterpreterTool(), localStoreTool({ namespace: "bak" })];
+const agentContext = { viewRoot: canvas };
 
 runBtn.addEventListener("click", async () => {
 	if (!canvas) {
@@ -201,32 +195,40 @@ runBtn.addEventListener("click", async () => {
 	thinkingSummary = "";
 
 	try {
-		for await (const ev of runAgent(agentMessages, agentOptions, prompt)) {
-			if (ev.type === "message.delta") {
-				appendAssistantDelta(ev.delta);
-			}
-			if (ev.type === "message") {
-				finalizeAssistantMessage(ev.content);
-			}
-			if (ev.type === "status") {
-				setStatus(ev.status);
-			}
-			if (ev.type === "thinking.delta") {
-				appendThinkingDelta(ev.delta);
-			}
-			if (ev.type === "thinking") {
-				setThinkingSummary(ev.summary);
-			}
-			if (ev.type === "error") {
-				if (ev.error instanceof Error) {
-					console.error(ev.error);
+		for await (const ev of runAgent(
+			agentMessages,
+			generate,
+			prompt,
+			tools,
+			skills,
+			25,
+			agentContext
+		)) {
+			if (E.isLeft(ev)) {
+				const error = ev.left;
+				if (error instanceof Error) {
+					console.error(error);
 				} else {
-					console.error(new Error(String(ev.error)));
+					console.error(new Error(String(error)));
 				}
-				if (ev.error && typeof ev.error === "object" && "stack" in ev.error && ev.error.stack) {
-					console.error(ev.error.stack);
-				}
-				addMessage("assistant", `${String(ev.error)}`);
+				addMessage("assistant", `${String(error)}`);
+				break;
+			}
+			const event = ev.right;
+			if (event.type === "message.delta") {
+				appendAssistantDelta(event.delta);
+			}
+			if (event.type === "message") {
+				finalizeAssistantMessage(event.content);
+			}
+			if (event.type === "status") {
+				setStatus(event.status);
+			}
+			if (event.type === "thinking.delta") {
+				appendThinkingDelta(event.delta);
+			}
+			if (event.type === "thinking") {
+				setThinkingSummary(event.summary);
 			}
 		}
 	} catch (error) {
