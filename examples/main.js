@@ -283,5 +283,9 @@ runBtn.addEventListener("click", async () => {
 		addMessage("assistant", `${String(error)}`);
 	} finally {
 		runBtn.disabled = false;
+		if (promptInput) {
+			promptInput.value = "";
+			promptInput.focus();
+		}
 	}
 });
