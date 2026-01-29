@@ -199,7 +199,6 @@ python3 -m http.server 5173
 ```
 
 Then open http://localhost:5173/examples/ in your browser.
-The demo sets `toolChoice: "required"` so the model must call a tool/skill for each request.
 
 ### Dev (hot reload)
 

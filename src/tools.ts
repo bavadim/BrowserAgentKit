@@ -1,31 +1,8 @@
 import type { JsonSchema, ToolAction, ToolContext, ToolDefinition } from "./types";
 
-const jsInterpreterDescription = `# JavaScript Interpreter
-
-Run a JavaScript snippet inside the browser and return its result. The code runs with DOM helpers preloaded.
-Use jQuery (\`$\`) for DOM and event work.
-
-## Helpers
-
-- \`x(xpath, root?)\`: returns an array of nodes that match the XPath. \`root\` can be a Node, XPath string, or an array from \`x(...)\`. The search is scoped to the agent view root by default. Use \`x("/")[0]\` to access the root container.
-- \`replaceSubtree(target, next)\`: replaces a node with another node or HTML string. \`target\` can be a Node, an XPath string, or the array returned by \`x(...)\`.
-- \`diffSubtree(a, b)\`: returns \`{ equal, before, after }\` using \`Node.isEqualNode()\` for equality and serialized HTML/text for the diff.
-- \`viewRoot\`, \`document\`, \`window\`: convenience references to the scoped root and browser globals.
-- \`$\`: jQuery alias (loaded automatically when missing).
-
-## Examples
-
-\`\`\`js
-// Replace the entire canvas
-replaceSubtree(x("/")[0], "\n  <div class=\"card\">\n    <h2>New Title</h2>\n    <p>Updated by the agent.</p>\n  </div>\n");
-
-// Find and update an element
-const title = x("//h2")[0];
-if (title) title.textContent = "Updated";
-
-// Compare two subtrees
-const diff = diffSubtree(x("//section")[0], x("//section")[1]);
-\`\`\``;
+const jsInterpreterDescription = `Run JavaScript inside the browser with DOM helpers.
+Use it to modify the DOM and return results. jQuery (\`$\`) is available.
+Helpers: \`x()\`, \`replaceSubtree()\`, \`diffSubtree()\`, \`viewRoot\`, \`document\`, \`window\`.`;
 
 type RuntimeEnv = {
 	document?: Document;
@@ -45,6 +22,26 @@ type InterpreterHelpers = {
 
 const jqueryCache = new WeakMap<Window, Promise<unknown | undefined>>();
 const CALLABLE_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+function formatSchemaArgs(schema: JsonSchema): string {
+	if (!schema || schema.type !== "object" || !schema.properties) {
+		return "Args: (none)";
+	}
+	const required = new Set(schema.required ?? []);
+	const entries = Object.entries(schema.properties)
+		.map(([key, value]) => {
+			const prop = value as JsonSchema;
+			const rawType = prop.type;
+			const type = Array.isArray(rawType) ? rawType.join("|") : rawType ?? "any";
+			const reqLabel = required.has(key) ? ", required" : "";
+			return `${key} (${type}${reqLabel})`;
+		})
+		.filter(Boolean);
+	if (entries.length === 0) {
+		return "Args: (none)";
+	}
+	return `Args: ${entries.join("; ")}`;
+}
 
 function normalizeCallableName(name: string, fallback: string): string {
 	const trimmed = name.trim();
@@ -102,7 +99,8 @@ export class Tool {
 	public formatForList(): string {
 		const callName = this.callName !== this.name ? `\nCall name: ${this.callName}` : "";
 		const desc = this.description ? `\nDescription: ${this.description}` : "";
-		return `## Tool: ${this.name}${callName}${desc}`;
+		const args = `\n${formatSchemaArgs(this.inputSchema)}`;
+		return `## Tool: ${this.name}${callName}${desc}${args}`;
 	}
 }
 
@@ -429,37 +427,20 @@ export function jsInterpreterTool(): Tool {
 	);
 }
 
-const domSummaryDescription = `# DOM Summary
+const domSummaryDescription =
+	"Return a Markdown tree of the DOM (scoped to view root). Lines are truncated at 2048 chars.";
 
-Return a Markdown tree that summarizes the DOM structure (scoped to the view root when provided).
-Each line includes a tag label and its XPath. Lines longer than 2048 characters are truncated.
+const domSubtreeHtmlDescription = "Return the full outerHTML of the first node matching the XPath selector.";
 
-Inputs:
-- \`maxDepth\`: Maximum depth to traverse (default: 6).
-- \`maxChildren\`: Maximum number of children per node (default: 50).
-- \`maxNodes\`: Maximum number of nodes to include (default: 300).`;
+const domAppendHtmlDescription = "Append an HTML string as children of the node matching the XPath selector.";
 
-const domSubtreeHtmlDescription = `# DOM Subtree (HTML)
+const domRemoveDescription = "Remove all nodes matching the XPath selector.";
 
-Return the full \`outerHTML\` of the first node matching the XPath selector.`;
+const domBindEventDescription =
+	"Attach a JS event handler to all nodes matching the XPath selector. Handler receives event, element, document, window, $.";
 
-const domAppendHtmlDescription = `# DOM Append HTML
-
-Append an HTML string as children of the node matching the XPath selector.`;
-
-const domRemoveDescription = `# DOM Remove
-
-Remove all nodes matching the XPath selector.`;
-
-const domBindEventDescription = `# DOM Bind Event
-
-Attach a JavaScript event handler to all nodes matching the XPath selector.
-The handler receives \`event\`, \`element\`, \`document\`, \`window\`, and \`$\` (jQuery).`;
-
-const jsRunDescription = `# JavaScript Runner
-
-Run a JavaScript snippet inside the browser and return its result.
-Use jQuery (\`$\`) for DOM and event work.`;
+const jsRunDescription =
+	"Run a JavaScript snippet inside the browser and return its result. Use jQuery ($) for DOM/event work.";
 
 export function domSummaryTool(): Tool {
 	const inputSchema = {

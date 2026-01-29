@@ -58,7 +58,8 @@ export class Skill {
 	public formatForList(): string {
 		const callName = this.callName !== this.name ? `\nCall name: ${this.callName}` : "";
 		const desc = this.description ? `\nDescription: ${this.description}` : "";
-		return `## Skill: ${this.name}${callName}${desc}`;
+		const args = "\nArgs: task (string, required); history (array, required)";
+		return `## Skill: ${this.name}${callName}${desc}${args}`;
 	}
 
 	public buildPrompt(childCallables: Callable[]): E.Either<Error, string> {

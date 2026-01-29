@@ -172,7 +172,6 @@ function getClient() {
 const generate = createOpenAIResponsesAdapter({
 	getClient,
 	model: "gpt-5",
-	toolChoice: "required",
 });
 
 const agentMessages = createAgentMessages();
