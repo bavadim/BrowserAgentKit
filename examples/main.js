@@ -193,9 +193,7 @@ const agent = canvas
 				},
 				signal ? { signal } : undefined
 			);
-			for await (const event of stream) {
-				yield event;
-			}
+			return stream;
 		},
 		viewRoot: canvas,
 		skills,

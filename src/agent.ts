@@ -216,9 +216,14 @@ export function createAgent(options: AgentOptions): AgentRunner {
 								streamError = event.error;
 								break;
 							}
-							case StreamingEventType.ResponseCompleted:
-							default:
+							case StreamingEventType.ResponseCompleted: {
 								break;
+							}
+							default: {
+								console.error("unrecognized event", event);
+								break;
+							}
+
 						}
 					}
 				} catch (error) {
