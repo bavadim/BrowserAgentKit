@@ -2,5 +2,6 @@ export * from "./types";
 export * from "./agent";
 export * from "./adapters";
 export * from "./status";
+export * from "./tool";
 export * from "./skill";
 export * from "./tools";

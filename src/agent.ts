@@ -4,14 +4,15 @@ import type {
 	AgentEvent,
 	AgentGenerate,
 	AgentStreamEvent,
+	Callable,
 	Message,
 	RunAgentOptions,
-	Skill,
-	Tool,
 	ToolCall,
 	ToolContext,
+	ToolDefinition,
 } from "./types";
-import { formatSkills, parseSkillCallArgs, toOpenAITools, withSystemAfter } from "./skill";
+import { Skill } from "./skill";
+import { Tool } from "./tool";
 import {
 	addToolCall,
 	applyStreamEvent,
@@ -28,6 +29,39 @@ const toError = (error: unknown): Error =>
 	error instanceof Error ? error : new Error(String(error));
 const right = (event: AgentEvent): AgentStreamEvent => E.right(event);
 const left = (error: Error): AgentStreamEvent => E.left(error);
+
+function formatCallables(title: string, callables: Callable[]): string {
+	if (callables.length === 0) {
+		return "";
+	}
+	const block = callables.map((callable) => callable.formatForList()).join("\n\n");
+	return `\n# ${title}\n${block}`;
+}
+
+function withSystemAfter(messages: Message[], systemMessage: Message | null): Message[] {
+	if (!systemMessage) {
+		return messages;
+	}
+	const systemIndex = messages.findIndex((item) => "role" in item && item.role === "system");
+	if (systemIndex === -1) {
+		return [systemMessage, ...messages];
+	}
+	return [
+		...messages.slice(0, systemIndex + 1),
+		systemMessage,
+		...messages.slice(systemIndex + 1),
+	];
+}
+
+function toOpenAITools(callables: Callable[]): ToolDefinition[] | undefined {
+	if (callables.length === 0) {
+		return undefined;
+	}
+	return callables.map((callable) => callable.toToolDefinition());
+}
+
+const isSkillCallable = (callable: Callable): callable is Skill => callable.kind === "skill";
+const isToolCallable = (callable: Callable): callable is Tool => callable.kind === "tool";
 
 function normalizeToolArgs(args: unknown): unknown {
 	if (typeof args !== "string") {
@@ -53,8 +87,7 @@ export async function* runAgent(
 	messages: Message[],
 	generate: AgentGenerate,
 	input: string,
-	tools: Tool[] = [],
-	skills: Skill[] = [],
+	callables: Callable[] = [],
 	maxSteps: number = 25,
 	context?: Partial<ToolContext>,
 	signal?: AbortSignal,
@@ -62,7 +95,7 @@ export async function* runAgent(
 ): AsyncGenerator<AgentStreamEvent, void, void> {
 	const skipActiveRuns = options?.skipActiveRuns ?? false;
 	const skillDepth = options?.skillDepth ?? 0;
-	const hasSkillListOverride = options?.skillListMessage !== undefined;
+	const hasCallableListOverride = options?.callableListMessage !== undefined;
 	const controller = skipActiveRuns ? null : new AbortController();
 	const runSignal = controller?.signal ?? signal;
 	if (!skipActiveRuns) {
@@ -79,16 +112,16 @@ export async function* runAgent(
 			}
 		}
 	}
-	const skillsBlock = formatSkills("Skills", skills);
-	const rootSkillListMessage = hasSkillListOverride
-		? options?.skillListMessage ?? null
-		: skillsBlock
+	const callablesBlock = formatCallables("Callables", callables);
+	const rootCallableListMessage = hasCallableListOverride
+		? options?.callableListMessage ?? null
+		: callablesBlock
 			? {
 				role: "system" as const,
 				content: [
-					"Call a skill tool when it matches the request.",
-					"If the user mentions a skill as `$name`, treat it as a suggestion (not a requirement).",
-					skillsBlock,
+					"Call a tool or skill when it matches the request.",
+					"If the user mentions a callable as `$name`, treat it as a suggestion (not a requirement).",
+					callablesBlock,
 				].join("\n"),
 			}
 			: null;
@@ -99,35 +132,36 @@ export async function* runAgent(
 		viewRoot,
 		document: context?.document ?? docFromRoot ?? (hasWindow ? document : undefined),
 		window: context?.window ?? (hasWindow ? window : undefined),
-		localStorage:
-			context?.localStorage ?? (typeof localStorage !== "undefined" ? localStorage : undefined),
 		signal: runSignal,
 	};
 	messages.push({ role: "user", content: input });
 	let sawError = false;
-	const toolMap = new Map<string, Tool>(tools.map((tool) => [tool.name, tool]));
-	const skillMap = new Map<string, Skill>(skills.map((skill) => [skill.name, skill]));
-	const toolDefs = toOpenAITools(tools, skills);
+	const callableMap = new Map<string, Callable>(
+		callables.map((callable) => [callable.name, callable])
+	);
+	const toolDefs = toOpenAITools(callables);
 	const resolveTarget = (call: ToolCall, args: unknown): E.Either<Error, CallTarget> => {
-		const skill = skillMap.get(call.name);
-		if (skill) {
+		const callable = callableMap.get(call.name);
+		if (!callable) {
+			return E.left(new Error(`Unknown callable: ${call.name}`));
+		}
+		if (isSkillCallable(callable)) {
 			return pipe(
-				parseSkillCallArgs(args),
+				Skill.parseCallArgs(args),
 				E.map(
 					(input): CallTarget => ({
 						kind: "skill",
-						skill,
+						skill: callable,
 						input,
 						depth: skillDepth + 1,
 					})
 				)
 			);
 		}
-		const tool = toolMap.get(call.name);
-		if (tool) {
-			return E.right({ kind: "tool", tool });
+		if (isToolCallable(callable)) {
+			return E.right({ kind: "tool", tool: callable });
 		}
-		return E.left(new Error(`Unknown tool: ${call.name}`));
+		return E.left(new Error(`Unknown callable kind: ${call.name}`));
 	};
 
 	try {
@@ -138,7 +172,7 @@ export async function* runAgent(
 			}
 			step += 1;
 			const stepState = initLoopState();
-			const promptMessages = withSystemAfter(messages, rootSkillListMessage);
+			const promptMessages = withSystemAfter(messages, rootCallableListMessage);
 			const stream = await generate(promptMessages, toolDefs, runSignal);
 			let stop = false;
 

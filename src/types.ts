@@ -6,7 +6,7 @@ import type {
 import type { Either } from "fp-ts/lib/Either.js";
 
 export type JsonSchema = {
-	type: string;
+	type: string | string[];
 	description?: string;
 	properties?: Record<string, unknown>;
 	required?: string[];
@@ -18,24 +18,19 @@ export type ToolContext = {
 	viewRoot?: Element;
 	document?: Document;
 	window?: Window;
-	localStorage?: Storage;
 	signal?: AbortSignal;
 };
 
-export type Tool = {
+export type ToolAction = (args: unknown, ctx: ToolContext) => Promise<unknown> | unknown;
+
+export type Callable = {
+	kind: "tool" | "skill";
 	name: string;
 	description?: string;
-	parameters?: JsonSchema;
-	run: (args: unknown, ctx: ToolContext) => Promise<unknown> | unknown;
+	toToolDefinition: () => ToolDefinition;
+	formatForList: () => string;
 };
 
-export type Skill = {
-	name: string;
-	description?: string;
-	promptSelector: string;
-	allowedSkills?: Skill[];
-	tools?: Tool[];
-};
 
 export type ToolCall = {
 	id?: string;
@@ -53,7 +48,7 @@ export type SkillCallArgs = {
 
 export type RunAgentOptions = {
 	skillDepth?: number;
-	skillListMessage?: Message | null;
+	callableListMessage?: Message | null;
 	skipActiveRuns?: boolean;
 };
 

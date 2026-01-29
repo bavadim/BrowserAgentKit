@@ -141,7 +141,8 @@
       {
         "imports": {
           "browseragentkit": "../dist/index.js",
-          "openai": "../node_modules/openai/index.mjs"
+          "openai": "../node_modules/openai/index.mjs",
+          "jquery": "../node_modules/jquery/dist/jquery.min.js"
         }
       }
     </script>
@@ -180,6 +181,10 @@
 
     <script type="module" src="./main.js"></script>
     <script type="text/markdown" id="skill-canvas-render">
+---
+name: canvas.render
+description: Renders HTML into the right-side canvas using the JS interpreter helpers.
+---
 # Goal
 Create or update HTML inside the canvas.
 

@@ -1,163 +1,214 @@
 import { pipe } from "fp-ts/lib/function.js";
 import * as E from "fp-ts/lib/Either.js";
 import * as O from "fp-ts/lib/Option.js";
-import type { Message, Skill, SkillCallArgs, Tool, ToolContext, ToolDefinition } from "./types";
+import type { Callable, SkillCallArgs, ToolDefinition } from "./types";
 
-export function formatSkills(title: string, skills: Skill[]): string {
-	if (skills.length === 0) {
-		return "";
+type SkillFrontmatter = {
+	name?: string;
+	description?: string;
+};
+
+type SkillMarkdown = {
+	frontmatter: SkillFrontmatter;
+	body: string;
+};
+
+export class Skill {
+	public readonly kind = "skill" as const;
+	public readonly name: string;
+	public readonly description?: string;
+	public readonly prompt: string;
+	public readonly callables: Callable[];
+
+	public constructor(
+		name: string,
+		description: string | undefined,
+		prompt: string,
+		callables: Callable[] = []
+	) {
+		this.name = name;
+		this.description = description;
+		this.prompt = prompt;
+		this.callables = callables;
 	}
-	const skillsBlock = skills
-		.map((skill) => {
-			const desc = skill.description ? `\nDescription: ${skill.description}` : "";
-			return `## Skill: ${skill.name}${desc}`;
-		})
-		.join("\n\n");
-	return `\n# ${title}\n${skillsBlock}`;
-}
 
-export const parseSkillCallArgs = (args: unknown): E.Either<Error, SkillCallArgs> =>
-	pipe(
-		E.fromPredicate(
-			(value): value is { task?: unknown; history?: unknown } =>
-				!!value && typeof value === "object" && !Array.isArray(value),
-			() => new Error("Skill call arguments must be an object.")
-		)(args),
-		E.chain((candidate) => {
-			const task = candidate.task;
-			if (typeof task !== "string" || task.trim().length === 0) {
-				return E.left(new Error("Skill call must include a non-empty task string."));
-			}
-			if (candidate.history === undefined) {
-				return E.right({ task });
-			}
-			if (!Array.isArray(candidate.history)) {
-				return E.left(new Error("Skill call history must be an array of messages."));
-			}
-			return E.right({ task, history: candidate.history as SkillCallArgs["history"] });
-		})
-	);
+	public withCallables(callables: Callable[]): Skill {
+		return new Skill(this.name, this.description, this.prompt, callables);
+	}
 
-export function buildSkillPrompt(prompt: string, childSkills: Skill[]): E.Either<Error, string> {
-	return pipe(
-		prompt
+	public formatForList(): string {
+		const desc = this.description ? `\nDescription: ${this.description}` : "";
+		return `## Skill: ${this.name}${desc}`;
+	}
+
+	public buildPrompt(childCallables: Callable[]): E.Either<Error, string> {
+		const childSkills = childCallables.filter(Skill.isSkill);
+		return pipe(
+			Skill.sanitizePrompt(this.prompt),
+			O.fromPredicate((text) => text.length > 0),
+			O.map((sanitized) => {
+				const subskillsBlock = Skill.formatList("Subskills", childSkills);
+				if (!subskillsBlock) {
+					return sanitized;
+				}
+				return [
+					sanitized,
+					"",
+					"Call subskills when they help complete the task.",
+					"If the user mentions a subskill as `$name`, treat it as a suggestion (not a requirement).",
+					subskillsBlock,
+				].join("\n");
+			}),
+			E.fromOption(() => new Error("Skill prompt is empty after sanitization."))
+		);
+	}
+
+	public toToolDefinition(): ToolDefinition {
+		return {
+			type: "function",
+			name: this.name,
+			description: this.description,
+			parameters: {
+				type: "object",
+				properties: {
+					task: {
+						type: "string",
+						description: "Task for the skill to perform.",
+					},
+					history: {
+						type: "array",
+						description: "Optional chat history for the skill.",
+						items: {
+							type: "object",
+							properties: {
+								role: { type: "string" },
+								content: { type: "string" },
+							},
+							required: ["role", "content"],
+							additionalProperties: true,
+						},
+					},
+				},
+				required: ["task"],
+				additionalProperties: false,
+			},
+			strict: true,
+		};
+	}
+
+	public static formatList(title: string, skills: Skill[]): string {
+		if (skills.length === 0) {
+			return "";
+		}
+		const skillsBlock = skills.map((skill) => skill.formatForList()).join("\n\n");
+		return `\n# ${title}\n${skillsBlock}`;
+	}
+
+	public static parseCallArgs(args: unknown): E.Either<Error, SkillCallArgs> {
+		return pipe(
+			E.fromPredicate(
+				(value): value is { task?: unknown; history?: unknown } =>
+					!!value && typeof value === "object" && !Array.isArray(value),
+				() => new Error("Skill call arguments must be an object.")
+			)(args),
+			E.chain((candidate) => {
+				const task = candidate.task;
+				if (typeof task !== "string" || task.trim().length === 0) {
+					return E.left(new Error("Skill call must include a non-empty task string."));
+				}
+				if (candidate.history === undefined) {
+					return E.right({ task });
+				}
+				if (!Array.isArray(candidate.history)) {
+					return E.left(new Error("Skill call history must be an array of messages."));
+				}
+				return E.right({ task, history: candidate.history as SkillCallArgs["history"] });
+			})
+		);
+	}
+
+	public static fromDomSelector(selector: string, doc: Document): Skill {
+		const trimmedSelector = selector.trim();
+		if (!trimmedSelector) {
+			throw new Error("Skill selector must be a non-empty XPath string.");
+		}
+		const XPathResultRef = doc.defaultView?.XPathResult;
+		if (!XPathResultRef) {
+			throw new Error("XPathResult is not available in this environment.");
+		}
+		const result = doc.evaluate(trimmedSelector, doc, null, XPathResultRef.FIRST_ORDERED_NODE_TYPE, null);
+		const node = result.singleNodeValue;
+		if (!node || node.nodeType !== 1) {
+			throw new Error(`Skill markdown not found for selector: ${trimmedSelector}`);
+		}
+		const rawMarkdown = (node.textContent ?? "").trim();
+		if (!rawMarkdown) {
+			throw new Error(`Skill markdown is empty for selector: ${trimmedSelector}`);
+		}
+		const parsed = Skill.parseMarkdown(rawMarkdown);
+		const name = parsed.frontmatter.name?.trim();
+		if (!name) {
+			throw new Error(`Skill frontmatter must include a non-empty name for selector: ${trimmedSelector}`);
+		}
+		const description = parsed.frontmatter.description?.trim();
+		return new Skill(name, description, parsed.body);
+	}
+
+	private static sanitizePrompt(prompt: string): string {
+		return prompt
 			.replace(/<script[\s\S]*?<\/script>/gi, "")
 			.replace(/<style[\s\S]*?<\/style>/gi, "")
 			.replace(/<\/?[^>]+>/g, "")
-			.trim(),
-		O.fromPredicate((text) => text.length > 0),
-		O.map((sanitized) => {
-			const subskillsBlock = formatSkills("Subskills", childSkills);
-			if (!subskillsBlock) {
-				return sanitized;
+			.trim();
+	}
+
+	private static parseMarkdown(markdown: string): SkillMarkdown {
+		const match = markdown.match(/^---\s*\n([\s\S]*?)\n---\s*\n?/);
+		if (!match) {
+			throw new Error("Skill markdown must start with YAML frontmatter.");
+		}
+		const frontmatterText = match[1] ?? "";
+		const body = markdown.slice(match[0].length).trim();
+		return {
+			frontmatter: Skill.parseFrontmatter(frontmatterText),
+			body,
+		};
+	}
+
+	private static parseFrontmatter(frontmatterText: string): SkillFrontmatter {
+		const frontmatter: SkillFrontmatter = {};
+		for (const line of frontmatterText.split(/\r?\n/)) {
+			const trimmed = line.trim();
+			if (!trimmed || trimmed.startsWith("#")) {
+				continue;
 			}
-			return [
-				sanitized,
-				"",
-				"Call subskills when they help complete the task.",
-				"If the user mentions a subskill as `$name`, treat it as a suggestion (not a requirement).",
-				subskillsBlock,
-			].join("\n");
-		}),
-		E.fromOption(() => new Error("Skill prompt is empty after sanitization."))
-	);
-}
+			const separatorIndex = trimmed.indexOf(":");
+			if (separatorIndex === -1) {
+				throw new Error(`Invalid frontmatter line: ${line}`);
+			}
+			const key = trimmed.slice(0, separatorIndex).trim();
+			const value = trimmed.slice(separatorIndex + 1).trim();
+			if (!key) {
+				throw new Error(`Invalid frontmatter line: ${line}`);
+			}
+			if (key === "name" || key === "description") {
+				frontmatter[key] = Skill.stripQuotes(value);
+			}
+		}
+		return frontmatter;
+	}
 
-export function resolveSkillPrompt(skill: Skill, ctx: ToolContext): string {
-	const selector = skill.promptSelector?.trim();
-	if (!selector) {
-		throw new Error(`Skill prompt selector is required for ${skill.name}.`);
+	private static stripQuotes(value: string): string {
+		if (
+			(value.startsWith("\"") && value.endsWith("\"")) ||
+			(value.startsWith("'") && value.endsWith("'"))
+		) {
+			return value.slice(1, -1);
+		}
+		return value;
 	}
-	const doc =
-		ctx.document ?? ctx.viewRoot?.ownerDocument ?? (typeof document !== "undefined" ? document : undefined);
-	if (!doc) {
-		throw new Error("No document available to resolve skill prompt.");
-	}
-	const XPathResultRef = doc.defaultView?.XPathResult;
-	if (!XPathResultRef) {
-		throw new Error("XPathResult is not available in this environment.");
-	}
-	const result = doc.evaluate(selector, doc, null, XPathResultRef.FIRST_ORDERED_NODE_TYPE, null);
-	const node = result.singleNodeValue;
-	if (!node || node.nodeType !== 1) {
-		throw new Error(`Skill prompt not found for selector: ${selector}`);
-	}
-	const resolvedPrompt = (node.textContent ?? "").trim();
-	if (!resolvedPrompt) {
-		throw new Error(`Skill prompt is empty for selector: ${selector}`);
-	}
-	return resolvedPrompt;
-}
 
-export function buildSkillMessages(
-	basePrompt: string,
-	prompt: string,
-	input: SkillCallArgs,
-	history: Message[] = []
-): Message[] {
-	return [
-		{ role: "system", content: basePrompt },
-		{ role: "system", content: prompt },
-		...history,
-		{ role: "user", content: input.task },
-	];
-}
-
-export function withSystemAfter(messages: Message[], skillMessage: Message | null): Message[] {
-	if (!skillMessage) {
-		return messages;
+	private static isSkill(callable: Callable): callable is Skill {
+		return callable.kind === "skill";
 	}
-	const systemIndex = messages.findIndex((item) => "role" in item && item.role === "system");
-	if (systemIndex === -1) {
-		return [skillMessage, ...messages];
-	}
-	return [
-		...messages.slice(0, systemIndex + 1),
-		skillMessage,
-		...messages.slice(systemIndex + 1),
-	];
-}
-
-export function toOpenAITools(tools: Tool[], skills: Skill[]): ToolDefinition[] | undefined {
-	if (tools.length === 0 && skills.length === 0) {
-		return undefined;
-	}
-	const toolDefs: ToolDefinition[] = tools.map((tool) => ({
-		type: "function",
-		name: tool.name,
-		description: tool.description,
-		parameters: tool.parameters ?? { type: "object" },
-		strict: true,
-	}));
-	const skillDefs: ToolDefinition[] = skills.map((skill) => ({
-		type: "function",
-		name: skill.name,
-		description: skill.description,
-		parameters: {
-			type: "object",
-			properties: {
-				task: {
-					type: "string",
-					description: "Task for the skill to perform.",
-				},
-				history: {
-					type: "array",
-					description: "Optional chat history for the skill.",
-					items: {
-						type: "object",
-						properties: {
-							role: { type: "string" },
-							content: { type: "string" },
-						},
-						required: ["role", "content"],
-						additionalProperties: true,
-					},
-				},
-			},
-			required: ["task"],
-			additionalProperties: false,
-		},
-		strict: true,
-	}));
-	return [...toolDefs, ...skillDefs];
 }

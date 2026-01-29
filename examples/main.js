@@ -4,8 +4,14 @@ import {
 	createOpenAIResponsesAdapter,
 	createAgentMessages,
 	runAgent,
+	domAppendHtmlTool,
+	domBindEventTool,
+	domRemoveTool,
+	domSubtreeHtmlTool,
+	domSummaryTool,
 	jsInterpreterTool,
-	localStoreTool,
+	jsRunTool,
+	Skill,
 	withStatus,
 } from "browseragentkit";
 
@@ -144,13 +150,7 @@ function appendThinkingDelta(delta) {
 	setThinkingSummary(thinkingSummary + delta);
 }
 
-const skills = [
-	{
-		name: "canvas.render",
-		description: "Renders HTML into the right-side canvas using the JS interpreter helpers.",
-		promptSelector: "//script[@id='skill-canvas-render']",
-	},
-];
+const skills = [Skill.fromDomSelector("//script[@id='skill-canvas-render']", document)];
 
 let lastClientConfig = { baseUrl: "", apiKey: "" };
 let client = null;
@@ -175,7 +175,16 @@ const generate = createOpenAIResponsesAdapter({
 });
 
 const agentMessages = createAgentMessages();
-const tools = [jsInterpreterTool(), localStoreTool({ namespace: "bak" })];
+const tools = [
+	jsInterpreterTool(),
+	jsRunTool(),
+	domSummaryTool(),
+	domSubtreeHtmlTool(),
+	domAppendHtmlTool(),
+	domRemoveTool(),
+	domBindEventTool(),
+];
+const callables = [...tools, ...skills];
 const agentContext = { viewRoot: canvas };
 
 runBtn.addEventListener("click", async () => {
@@ -200,8 +209,7 @@ runBtn.addEventListener("click", async () => {
 			agentMessages,
 			generate,
 			prompt,
-			tools,
-			skills,
+			callables,
 			25,
 			agentContext
 		))) {

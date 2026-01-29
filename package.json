@@ -39,9 +39,11 @@
   },
   "dependencies": {
     "fp-ts": "^2.16.1",
+    "jquery": "^3.7.1",
     "openai": "^6.16.0"
   },
   "devDependencies": {
+    "@types/jquery": "^3.5.29",
     "@typescript-eslint/parser": "^8.37.0",
     "eslint": "^9.10.0",
     "globals": "^15.9.0",

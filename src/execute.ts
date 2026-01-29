@@ -4,17 +4,17 @@ import type {
 	AgentEvent,
 	AgentGenerate,
 	AgentStreamEvent,
+	Callable,
 	Message,
 	RunAgentOptions,
-	Skill,
 	SkillCallArgs,
-	Tool,
 	ToolCall,
 	ToolContext,
 	ToolEnd,
 	ToolStart,
 } from "./types";
-import { buildSkillPrompt, resolveSkillPrompt } from "./skill";
+import type { Skill } from "./skill";
+import type { Tool } from "./tool";
 
 export type CallTarget =
 	| { kind: "tool"; tool: Tool }
@@ -38,8 +38,7 @@ export type RunAgent = (
 	messages: Message[],
 	generate: AgentGenerate,
 	input: string,
-	tools?: Tool[],
-	skills?: Skill[],
+	callables?: Callable[],
 	maxSteps?: number,
 	context?: Partial<ToolContext>,
 	signal?: AbortSignal,
@@ -156,12 +155,8 @@ export async function runSkill(
 	runAgent: RunAgent,
 	basePrompt: string
 ): Promise<E.Either<Error, SkillRunResult>> {
-	const childSkills = target.skill.allowedSkills ?? [];
-	const childTools = target.skill.tools ?? [];
-	const skillPromptResult = pipe(
-		E.tryCatch(() => resolveSkillPrompt(target.skill, ctx), toError),
-		E.chain((prompt) => buildSkillPrompt(prompt, childSkills))
-	);
+	const childCallables = target.skill.callables ?? [];
+	const skillPromptResult = target.skill.buildPrompt(childCallables);
 
 	return pipe(
 		skillPromptResult,
@@ -177,14 +172,13 @@ export async function runSkill(
 				nestedMessages,
 				generate,
 				target.input.task,
-				childTools,
-				childSkills,
+				childCallables,
 				maxSteps,
 				ctx,
 				signal,
 				{
 					skillDepth: target.depth,
-					skillListMessage: null,
+					callableListMessage: null,
 					skipActiveRuns: true,
 				}
 			)) {

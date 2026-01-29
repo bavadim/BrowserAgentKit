@@ -4,10 +4,9 @@ BrowserAgentKit is a TypeScript library for running a **code agent in the browse
 
 Implemented:
 - agent loop (observe → plan → act)
-- **skills** (prompt-based tools, Markdown in the DOM)
+- **skills** (prompt-based tools, Codex skill markdown in the DOM)
 - tools:
   - JS interpreter
-  - LocalStore (persistent KV)
   - DOM helpers inside the interpreter (XPath + subtree helpers)
 
 The agent API is an **async generator**: you send a text request and consume streamed events.
@@ -27,8 +26,8 @@ import {
   createAgentMessages,
   createOpenAIResponsesAdapter,
   jsInterpreterTool,
-  localStoreTool,
   runAgent,
+  Skill,
 } from "browseragentkit";
 
 const client = new OpenAI({
@@ -39,6 +38,10 @@ const client = new OpenAI({
 
 // Somewhere in your HTML:
 // <script type="text/markdown" id="skill-canvas-render">
+// ---
+// name: canvas.render
+// description: Renders HTML inside the canvas using the JS interpreter helpers.
+// ---
 // # Goal
 // Create or update HTML inside the canvas.
 //
@@ -51,13 +54,7 @@ const client = new OpenAI({
 // - Keep it deterministic and short.
 // </script>
 
-const skills = [
-  {
-    name: "canvas.render",
-    description: "Renders HTML inside the canvas using the JS interpreter helpers.",
-    promptSelector: "//script[@id='skill-canvas-render']",
-  },
-];
+const skills = [Skill.fromDomSelector("//script[@id='skill-canvas-render']", document)];
 
 const generate = createOpenAIResponsesAdapter({
   client,
@@ -67,16 +64,15 @@ const generate = createOpenAIResponsesAdapter({
 const agentMessages = createAgentMessages();
 const tools = [
   jsInterpreterTool(),
-  localStoreTool({ namespace: "bak" }),
 ];
+const callables = [...tools, ...skills];
 const agentContext = { viewRoot: document.getElementById("canvas") };
 
 for await (const ev of runAgent(
   agentMessages,
   generate,
   "Create a hero section on the canvas",
-  tools,
-  skills,
+  callables,
   25,
   agentContext
 )) {
@@ -96,10 +92,15 @@ If `runAgent()` is called again with the same messages array, the previous run i
 ## Skills
 
 A skill is a **tool** that runs the LLM with a Markdown prompt stored in the DOM.
-Store prompts in a script tag (or any DOM element) and pass an XPath selector:
+Store prompts in a script tag (or any DOM element) as **Codex skill markdown** (YAML frontmatter + body)
+and pass an XPath selector:
 
 ```html
 <script type="text/markdown" id="skill-example">
+---
+name: example.skill
+description: One-line description (optional but recommended).
+---
 # Goal
 ...
 
@@ -110,40 +111,81 @@ Store prompts in a script tag (or any DOM element) and pass an XPath selector:
 # Output
 - What the agent should return.
 </script>
+
+<script type="text/markdown" id="skill-subskill">
+---
+name: example.subskill
+description: Nested skill (only available inside this skill).
+---
+# Goal
+...
+</script>
 ```
 
 ```ts
 const skills = [
-  {
-    name: "example.skill",
-    description: "One-line description (optional but recommended).",
-    promptSelector: "//script[@id='skill-example']",
+  Skill.fromDomSelector("//script[@id='skill-example']", document)
     // Optional: scope what the skill can call.
-    tools: [jsInterpreterTool()],
-    allowedSkills: [
-      {
-        name: "example.subskill",
-        description: "Nested skill (only available inside this skill).",
-        promptSelector: "//script[@id='skill-example']",
-      },
-    ],
-  },
+    .withCallables([
+      jsInterpreterTool(),
+      Skill.fromDomSelector("//script[@id='skill-subskill']", document),
+    ]),
 ];
 ```
 
 The agent exposes each skill as a function-calling tool. When a skill runs, the agent:
 - Builds a child cycle from scratch (base system prompt → skill prompt → optional history → task).
 - Sanitizes the skill prompt to Markdown-only.
-- Makes only the skill's `tools` and `allowedSkills` available to the child cycle.
+- Makes only the skill's `callables` available to the child cycle.
 The skill tool arguments are `{ task: string; history?: EasyInputMessage[] }`.
-At the start of each root cycle, the agent injects a system message listing available skills. If the user mentions `$skillName`, it is treated as a suggestion.
+At the start of each root cycle, the agent injects a system message listing available tools and skills. If the user mentions `$name`, it is treated as a suggestion.
 
 ## Tools
 
-A tool is a JavaScript function plus a **separate Markdown description** that is sent to the model.
+A tool is an instance of the `Tool` class: name, description, action, and **input/output schemas**.
 Keep the description near the tool definition (in `src/tools.ts`).
 
-You don’t call tools directly: you **pass tools into the agent**, and the agent calls them when needed.
+```ts
+import { Tool } from "browseragentkit";
+
+const echoTool = new Tool(
+  "echo",
+  "Echo the input.",
+  (args) => args,
+  {
+    type: "object",
+    properties: { value: { type: "string" } },
+    required: ["value"],
+    additionalProperties: false,
+  },
+  { type: "object", description: "Echoed args." }
+);
+```
+
+Built-in tools:
+- `jsInterpreterTool` (runs JS with DOM helpers + jQuery)
+- `jsRunTool` (same as above, with explicit jQuery guidance)
+- `domSummaryTool`
+- `domSubtreeHtmlTool`
+- `domAppendHtmlTool`
+- `domRemoveTool`
+- `domBindEventTool`
+
+If you load the demo via plain `importmap`, add jQuery:
+
+```html
+<script type="importmap">
+{
+  "imports": {
+    "browseragentkit": "../dist/index.js",
+    "openai": "../node_modules/openai/index.mjs",
+    "jquery": "../node_modules/jquery/dist/jquery.min.js"
+  }
+}
+</script>
+```
+
+You don’t call tools directly: you **pass tools and skills into the agent as one callables list**, and the agent calls them when needed.
 
 ## Demo
 
@@ -174,7 +216,7 @@ You can prefill demo fields via query params:
 
 ## Agent API (async generator)
 
-`runAgent(messages, generate, input, tools?, skills?, maxSteps?, context?, signal?)` returns an async generator of `Either<Error, AgentEvent>`.
+`runAgent(messages, generate, input, callables?, maxSteps?, context?, signal?)` returns an async generator of `Either<Error, AgentEvent>`.
 
 Typical event kinds:
 

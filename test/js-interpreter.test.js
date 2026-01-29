@@ -10,14 +10,12 @@ function withDom(html, fn) {
 		document: globalThis.document,
 		Node: globalThis.Node,
 		XPathResult: globalThis.XPathResult,
-		localStorage: globalThis.localStorage,
 	};
 
 	globalThis.window = dom.window;
 	globalThis.document = dom.window.document;
 	globalThis.Node = dom.window.Node;
 	globalThis.XPathResult = dom.window.XPathResult;
-	globalThis.localStorage = dom.window.localStorage;
 
 	const restore = () => {
 		if (prev.window === undefined) {
@@ -39,11 +37,6 @@ function withDom(html, fn) {
 			delete globalThis.XPathResult;
 		} else {
 			globalThis.XPathResult = prev.XPathResult;
-		}
-		if (prev.localStorage === undefined) {
-			delete globalThis.localStorage;
-		} else {
-			globalThis.localStorage = prev.localStorage;
 		}
 	};
 
