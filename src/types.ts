@@ -41,12 +41,6 @@ export type ToolCall = {
 export type Message = EasyInputMessage | ResponseInputItem;
 export type ToolDefinition = ResponseTool;
 
-export type Generate = (
-	messages: Message[],
-	tools?: ToolDefinition[],
-	signal?: AbortSignal
-) => AsyncIterable<AgentEvent> | Promise<AsyncIterable<AgentEvent>>;
-
 export type AgentPolicies = {
 	maxSteps?: number;
 };
@@ -78,7 +72,7 @@ export type AgentEvent =
 	| { type: "done" };
 
 export type AgentOptions = {
-	generate: Generate;
+	generate: (messages: Message[], tools?: ToolDefinition[], signal?: AbortSignal) => AsyncIterable<AgentEvent>;
 	viewRoot?: Element;
 	context?: Partial<ToolContext>;
 	skills?: Skill[];
