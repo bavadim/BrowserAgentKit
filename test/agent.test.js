@@ -288,7 +288,7 @@ test("agent reports model errors", async () => {
 
 test("agent reset clears history", async () => {
 	const lengths = [];
-	const generate = ({ messages }) => {
+	const generate = (messages) => {
 		lengths.push(messages.length);
 		return streamFrom([
 			{ type: StreamingEventType.ResponseOutputTextDone, text: "ok" },

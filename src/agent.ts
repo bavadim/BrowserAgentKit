@@ -4,16 +4,13 @@ import type {
 	AgentOptions,
 	AgentRunner,
 	AgentStatus,
-	GenerateRequest,
 	Message,
 	RunOptions,
 	Skill,
-	StreamingEvent,
 	Tool,
 	ToolCall,
 	ToolContext,
 	ToolDefinition,
-	ToolSchema,
 } from "./types";
 
 function buildSystemPrompt(skills: Skill[]): string {
@@ -67,7 +64,7 @@ function resolveBrowserContext(options: AgentOptions, runOptions: RunOptions): T
 	};
 }
 
-function toOpenAITools(tools: ToolSchema[]): ToolDefinition[] | undefined {
+function toOpenAITools(tools: Tool[]): ToolDefinition[] | undefined {
 	if (tools.length === 0) {
 		return undefined;
 	}
@@ -119,11 +116,6 @@ export function createAgent(options: AgentOptions): AgentRunner {
 		? { role: "system", content: systemPrompt }
 		: null;
 	const messages: Message[] = [];
-	const toolSchemas: ToolSchema[] = tools.map((tool) => ({
-		name: tool.name,
-		description: tool.description,
-		parameters: tool.parameters,
-	}));
 	let isRunning = false;
 
 	if (systemMessage) {
@@ -159,12 +151,6 @@ export function createAgent(options: AgentOptions): AgentRunner {
 				let reasoningSummaryBuffer = "";
 				let finalReasoningSummary: string | null = null;
 
-				const request: GenerateRequest = {
-					messages,
-					tools: toOpenAITools(toolSchemas),
-					signal: runOptions.signal,
-				};
-
 				const emitStatus = (status: AgentStatus) => {
 					const key = statusKey(status);
 					if (key !== lastStatusKey) {
@@ -176,7 +162,7 @@ export function createAgent(options: AgentOptions): AgentRunner {
 
 				let streamError: unknown = null;
 				try {
-					const stream = await options.generate(request);
+					const stream = await options.generate(messages, toOpenAITools(tools), runOptions.signal);
 					for await (const event of stream) {
 						switch (event.type) {
 							case StreamingEventType.ResponseQueued:

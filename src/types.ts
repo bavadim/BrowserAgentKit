@@ -11,12 +11,6 @@ export type JsonSchema = {
 	additionalProperties?: boolean;
 };
 
-export type ToolSchema = {
-	name: string;
-	description?: string;
-	parameters?: JsonSchema;
-};
-
 export type ToolContext = {
 	viewRoot?: Element;
 	document?: Document;
@@ -25,7 +19,10 @@ export type ToolContext = {
 	signal?: AbortSignal;
 };
 
-export type Tool = ToolSchema & {
+export type Tool = {
+	name: string;
+	description?: string;
+	parameters?: JsonSchema;
 	run: (args: unknown, ctx: ToolContext) => Promise<unknown> | unknown;
 };
 
@@ -44,11 +41,11 @@ export type ToolCall = {
 export type Message = EasyInputMessage | ResponseInputItem;
 export type ToolDefinition = ResponseTool;
 
-export type GenerateRequest = {
-	messages: Message[];
-	tools?: ToolDefinition[];
-	signal?: AbortSignal;
-};
+export type Generate = (
+	messages: Message[],
+	tools?: ToolDefinition[],
+	signal?: AbortSignal
+) => AsyncIterable<StreamingEvent> | Promise<AsyncIterable<StreamingEvent>>;
 
 export enum StreamingEventType {
 	ResponseQueued = "response.queued",
@@ -65,68 +62,19 @@ export enum StreamingEventType {
 	Error = "error",
 }
 
-export type ResponseQueuedEvent = { type: StreamingEventType.ResponseQueued };
-export type ResponseCreatedEvent = { type: StreamingEventType.ResponseCreated };
-export type ResponseInProgressEvent = { type: StreamingEventType.ResponseInProgress };
-
-export type ResponseOutputTextDeltaEvent = {
-	type: StreamingEventType.ResponseOutputTextDelta;
-	item_id?: string;
-	delta: string;
-};
-
-export type ResponseOutputTextDoneEvent = {
-	type: StreamingEventType.ResponseOutputTextDone;
-	item_id?: string;
-	text: string;
-};
-
-export type ResponseReasoningSummaryTextDeltaEvent = {
-	type: StreamingEventType.ResponseReasoningSummaryTextDelta;
-	item_id?: string;
-	delta: string;
-};
-
-export type ResponseReasoningSummaryTextDoneEvent = {
-	type: StreamingEventType.ResponseReasoningSummaryTextDone;
-	item_id?: string;
-	text: string;
-};
-
-export type ResponseFunctionCallArgumentsDeltaEvent = {
-	type: StreamingEventType.ResponseFunctionCallArgumentsDelta;
-	item_id: string;
-	delta: string;
-};
-
-export type ResponseFunctionCallArgumentsDoneEvent = {
-	type: StreamingEventType.ResponseFunctionCallArgumentsDone;
-	item_id: string;
-	name?: string;
-	arguments?: string;
-};
-
-export type ResponseCompletedEvent = { type: StreamingEventType.ResponseCompleted };
-export type ResponseFailedEvent = { type: StreamingEventType.ResponseFailed; error?: unknown };
-export type ResponseErrorEvent = { type: StreamingEventType.Error; error: unknown };
-
 export type StreamingEvent =
-	| ResponseQueuedEvent
-	| ResponseCreatedEvent
-	| ResponseInProgressEvent
-	| ResponseOutputTextDeltaEvent
-	| ResponseOutputTextDoneEvent
-	| ResponseReasoningSummaryTextDeltaEvent
-	| ResponseReasoningSummaryTextDoneEvent
-	| ResponseFunctionCallArgumentsDeltaEvent
-	| ResponseFunctionCallArgumentsDoneEvent
-	| ResponseCompletedEvent
-	| ResponseFailedEvent
-	| ResponseErrorEvent;
-
-export type Generate = (
-	req: GenerateRequest
-) => AsyncIterable<StreamingEvent> | Promise<AsyncIterable<StreamingEvent>>;
+	| { type: StreamingEventType.ResponseQueued }
+	| { type: StreamingEventType.ResponseCreated }
+	| { type: StreamingEventType.ResponseInProgress }
+	| { type: StreamingEventType.ResponseOutputTextDelta; item_id?: string; delta: string }
+	| { type: StreamingEventType.ResponseOutputTextDone; item_id?: string; text: string }
+	| { type: StreamingEventType.ResponseReasoningSummaryTextDelta; item_id?: string; delta: string }
+	| { type: StreamingEventType.ResponseReasoningSummaryTextDone; item_id?: string; text: string }
+	| { type: StreamingEventType.ResponseFunctionCallArgumentsDelta; item_id: string; delta: string }
+	| { type: StreamingEventType.ResponseFunctionCallArgumentsDone; item_id: string; name?: string; arguments?: string }
+	| { type: StreamingEventType.ResponseCompleted }
+	| { type: StreamingEventType.ResponseFailed; error?: unknown }
+	| { type: StreamingEventType.Error; error: unknown };
 
 export type AgentPolicies = {
 	maxSteps?: number;

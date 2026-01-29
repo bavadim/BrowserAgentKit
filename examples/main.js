@@ -181,27 +181,27 @@ function getClient() {
 
 const agent = canvas
 	? createAgent({
-			generate: async function* ({ messages, tools, signal }) {
-				const activeClient = getClient();
-				const stream = await activeClient.responses.create(
-					{
-						model: "gpt-5",
-						input: messages,
-						tools,
-						tool_choice: tools?.length ? "auto" : undefined,
-						stream: true,
-					},
-					signal ? { signal } : undefined
-				);
-				for await (const event of stream) {
-					yield event;
-				}
-			},
-			viewRoot: canvas,
-			skills,
-			tools: [jsInterpreterTool(), localStoreTool({ namespace: "bak" })],
-			policies: { maxSteps: 25 },
-		})
+		generate: async function* (messages, tools, signal) {
+			const activeClient = getClient();
+			const stream = await activeClient.responses.create(
+				{
+					model: "gpt-5",
+					input: messages,
+					tools,
+					tool_choice: tools?.length ? "auto" : undefined,
+					stream: true,
+				},
+				signal ? { signal } : undefined
+			);
+			for await (const event of stream) {
+				yield event;
+			}
+		},
+		viewRoot: canvas,
+		skills,
+		tools: [jsInterpreterTool(), localStoreTool({ namespace: "bak" })],
+		policies: { maxSteps: 25 },
+	})
 	: null;
 
 runBtn.addEventListener("click", async () => {
