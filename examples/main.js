@@ -82,6 +82,9 @@ function finalizeAssistantMessage(text) {
 }
 
 function formatStatus(status) {
+	if (status.label) {
+		return status.label;
+	}
 	switch (status.kind) {
 		case "thinking":
 			return thinkingSummary ? `Thinking: ${thinkingSummary}` : "Thinking...";
@@ -186,6 +189,9 @@ const agent = createAgent({
 			signal ? { signal } : undefined
 		);
 		const toolArgBuffers = new Map();
+		const functionCalls = new Map();
+		const pendingCalls = new Map();
+		const emittedToolCalls = new Set();
 		const contentParts = new Map();
 		const summaryParts = new Map();
 		let textBuffer = "";
@@ -252,6 +258,13 @@ const agent = createAgent({
 			}
 			summaryBuffer = nextText;
 			return delta;
+		};
+		const getToolStart = (callId, name, args) => {
+			if (!callId || emittedToolCalls.has(callId)) {
+				return null;
+			}
+			emittedToolCalls.add(callId);
+			return { type: "tool.start", name, args, callId };
 		};
 		for await (const event of stream) {
 			switch (event.type) {
@@ -351,8 +364,14 @@ const agent = createAgent({
 				}
 				case "response.function_call_arguments.done": {
 					const args = event.arguments ?? toolArgBuffers.get(event.item_id) ?? "";
-					if (event.name) {
-						yield { type: "tool.start", name: event.name, args, callId: event.item_id };
+					const stored = functionCalls.get(event.item_id);
+					if (stored?.callId && stored?.name) {
+						const toolStart = getToolStart(stored.callId, stored.name, args);
+						if (toolStart) {
+							yield toolStart;
+						}
+					} else if (event.name) {
+						pendingCalls.set(event.item_id, { name: event.name, args });
 					}
 					break;
 				}
@@ -381,12 +400,27 @@ const agent = createAgent({
 						}
 					}
 					if (event.item?.type === "function_call") {
-						yield {
-							type: "tool.start",
-							name: event.item.name,
-							args: event.item.arguments ?? "",
-							callId: event.item.call_id,
-						};
+						const itemId = event.item.id ?? event.item.call_id;
+						if (itemId) {
+							const callId = event.item.call_id ?? itemId;
+							functionCalls.set(itemId, {
+								callId,
+								name: event.item.name,
+								args: event.item.arguments ?? "",
+							});
+							const pending = pendingCalls.get(itemId);
+							const args = pending?.args ?? event.item.arguments ?? "";
+							const name = pending?.name ?? event.item.name;
+							if (pending) {
+								pendingCalls.delete(itemId);
+							}
+							if (event.type === "response.output_item.done") {
+								const toolStart = getToolStart(callId, name, args);
+								if (toolStart) {
+									yield toolStart;
+								}
+							}
+						}
 					}
 					break;
 				}
