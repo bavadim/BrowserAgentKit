@@ -12,10 +12,11 @@ import type {
 	ToolCall,
 	ToolContext,
 	ToolDefinition,
+	ToolEnd,
+	ToolStart,
 } from "./types";
 
 const BASE_SYSTEM_PROMPT = "You are a browser-based code agent. Use tools when helpful and respond succinctly.";
-
 function formatSkills(title: string, skills: Skill[]): string {
 	if (skills.length === 0) {
 		return "";
@@ -121,6 +122,38 @@ function addToolOutput(messages: Message[], callId: string, output: unknown): vo
 	});
 }
 
+function addToolCall(messages: Message[], call: ToolCall): void {
+	if (!call.id) {
+		return;
+	}
+	const args =
+		typeof call.args === "string" ? call.args : JSON.stringify(call.args ?? {});
+	messages.push({
+		type: "function_call",
+		call_id: call.id,
+		name: call.name,
+		arguments: args,
+	});
+}
+
+const toError = (error: unknown): Error =>
+	error instanceof Error ? error : new Error(String(error));
+
+const withSystemAfter = (messages: Message[], skillMessage: Message | null): Message[] => {
+	if (!skillMessage) {
+		return messages;
+	}
+	const systemIndex = messages.findIndex((item) => "role" in item && item.role === "system");
+	if (systemIndex === -1) {
+		return [skillMessage, ...messages];
+	}
+	return [
+		...messages.slice(0, systemIndex + 1),
+		skillMessage,
+		...messages.slice(systemIndex + 1),
+	];
+};
+
 function resolveSkillPrompt(skill: Skill, ctx: ToolContext): string {
 	const selector = skill.promptSelector?.trim();
 	if (!selector) {
@@ -147,6 +180,43 @@ function resolveSkillPrompt(skill: Skill, ctx: ToolContext): string {
 	return prompt;
 }
 
+function buildSkillPrompt(prompt: string, childSkills: Skill[]): E.Either<Error, string> {
+	return pipe(
+		prompt
+			.replace(/<script[\s\S]*?<\/script>/gi, "")
+			.replace(/<style[\s\S]*?<\/style>/gi, "")
+			.replace(/<\/?[^>]+>/g, "")
+			.trim(),
+		O.fromPredicate((text) => text.length > 0),
+		O.map((sanitized) => {
+			const subskillsBlock = formatSkills("Subskills", childSkills);
+			if (!subskillsBlock) {
+				return sanitized;
+			}
+			return [
+				sanitized,
+				"",
+				"Call subskills when they help complete the task.",
+				"If the user mentions a subskill as `$name`, treat it as a suggestion (not a requirement).",
+				subskillsBlock,
+			].join("\n");
+		}),
+		E.fromOption(() => new Error("Skill prompt is empty after sanitization."))
+	);
+}
+
+const flushThinking = (
+	sawThinking: boolean,
+	finalReasoningSummary: string | null,
+	reasoningSummaryBuffer: string
+): AgentEvent | null => {
+	if (sawThinking) {
+		return null;
+	}
+	const summaryText = finalReasoningSummary ?? reasoningSummaryBuffer;
+	return summaryText ? { type: "thinking", summary: summaryText } : null;
+};
+
 export function createAgentMessages(): Message[] {
 	return [{ role: "system", content: BASE_SYSTEM_PROMPT }];
 }
@@ -162,6 +232,124 @@ async function* runLoop(
 	maxSteps: number,
 	generate: AgentOptions["generate"]
 ): AsyncGenerator<AgentEvent, void, void> {
+	type CallTarget =
+		| { kind: "tool"; tool: Tool }
+		| { kind: "skill"; skill: Skill; input: SkillCallArgs; depth: number };
+
+	const toolStartEvent = (call: ToolCall, args: unknown, target: CallTarget): ToolStart =>
+		target.kind === "skill"
+			? {
+					type: "tool.start",
+					name: call.name,
+					args,
+					callId: call.id,
+					isSkill: true,
+					depth: target.depth,
+					input: target.input,
+			  }
+			: { type: "tool.start", name: call.name, args, callId: call.id };
+
+	const toolEndEvent = (call: ToolCall, result: unknown, target: CallTarget): ToolEnd =>
+		target.kind === "skill"
+			? { type: "tool.end", name: call.name, result, isSkill: true, depth: target.depth }
+			: { type: "tool.end", name: call.name, result };
+
+	const resolveTarget = (call: ToolCall, args: unknown): E.Either<Error, CallTarget> => {
+		const skill = skillMap.get(call.name);
+		if (skill) {
+			return pipe(
+				parseSkillCallArgs(args),
+				E.map(
+					(input): CallTarget => ({
+						kind: "skill",
+						skill,
+						input,
+						depth: skillDepth + 1,
+					})
+				)
+			);
+		}
+		const tool = toolMap.get(call.name);
+		if (tool) {
+			return E.right({ kind: "tool", tool });
+		}
+		return E.left(new Error(`Unknown tool: ${call.name}`));
+	};
+
+	const buildSkillMessages = (
+		prompt: string,
+		input: SkillCallArgs,
+		history: Message[] = []
+	): Message[] => [
+		{ role: "system", content: BASE_SYSTEM_PROMPT },
+		{ role: "system", content: prompt },
+		...history,
+		{ role: "user", content: input.task },
+	];
+
+	const runSkill = async function* (target: Extract<CallTarget, { kind: "skill" }>): AsyncGenerator<
+		AgentEvent,
+		string,
+		void
+	> {
+		const prompt = resolveSkillPrompt(target.skill, ctx);
+		const childSkills = target.skill.allowedSkills ?? [];
+		const childTools = target.skill.tools ?? [];
+		const skillPrompt = pipe(
+			buildSkillPrompt(prompt, childSkills),
+			E.getOrElseW((error) => {
+				throw error;
+			})
+		);
+		const nestedMessages = buildSkillMessages(
+			skillPrompt,
+			target.input,
+			target.input.history ?? []
+		);
+		let skillText = "";
+		for await (const ev of runLoop(
+			nestedMessages,
+			signal,
+			ctx,
+			childTools,
+			childSkills,
+			target.depth,
+			null,
+			maxSteps,
+			generate
+		)) {
+			if (ev.type === "message") {
+				skillText = ev.content;
+				continue;
+			}
+			if ((ev.type === "tool.start" || ev.type === "tool.end") && "isSkill" in ev && ev.isSkill) {
+				yield ev;
+				continue;
+			}
+			if (ev.type === "error") {
+				yield ev;
+			}
+		}
+		return skillText;
+	};
+
+	const runToolCall = async function* (
+		call: ToolCall,
+		args: unknown,
+		target: CallTarget
+	): AsyncGenerator<AgentEvent, void, void> {
+		yield toolStartEvent(call, args, target);
+		let result: unknown = null;
+		if (target.kind === "skill") {
+			result = yield* runSkill(target);
+		} else {
+			result = await target.tool.run(args, ctx);
+		}
+		yield toolEndEvent(call, result, target);
+		addToolOutput(loopMessages, call.id ?? "tool-call", result ?? null);
+		yield* emitStatusEvent(AgentStatusKind.ToolResult, call.name);
+	};
+
 	const toolMap = new Map<string, Tool>(loopTools.map((tool) => [tool.name, tool]));
 	const skillMap = new Map<string, Skill>(loopSkills.map((skill) => [skill.name, skill]));
 	const toolDefs = toOpenAITools(loopTools, loopSkills);
@@ -176,6 +364,26 @@ async function* runLoop(
 		lastStatusKey = key;
 		return O.some({ type: "status", status: { kind, toolName, label } } as const);
 	};
+	const emitStatusEvent = function* (
+		kind: AgentStatusKind,
+		toolName?: string,
+		label?: string
+	): Generator<AgentEvent, void, void> {
+		const status = emitStatus(kind, toolName, label);
+		if (O.isSome(status)) {
+			yield status.value;
+		}
+	};
+
+	const emitErrorAndOutput = function* (
+		call: ToolCall,
+		error: Error,
+		statusName?: string
+	): Generator<AgentEvent, void, void> {
+		yield { type: "error", error };
+		addToolOutput(loopMessages, call.id ?? "tool-call", { error: String(error) });
+		yield* emitStatusEvent(AgentStatusKind.Error, statusName ?? call.name);
+	};
 
 	while (step < maxSteps) {
 		if (signal?.aborted) {
@@ -189,123 +397,107 @@ async function* runLoop(
 		let finalReasoningSummary: string | null = null;
 		let sawMessage = false;
 		let sawThinking = false;
-		let streamError: unknown = null;
+		let streamError: Error | null = null;
 		let errorEmitted = false;
 
+		const emitThinkingEvent = function* (event: AgentEvent): Generator<AgentEvent, void, void> {
+			yield* emitStatusEvent(AgentStatusKind.Thinking);
+			yield event;
+		};
+
+		type StreamHandlers = {
+			[K in AgentEvent["type"]]: (
+				event: Extract<AgentEvent, { type: K }>
+			) => Generator<AgentEvent, boolean, void>;
+		};
+
+		const streamHandlers: StreamHandlers = {
+			status: function* (event) {
+				yield* emitStatusEvent(event.status.kind, event.status.toolName, event.status.label);
+				return false;
+			},
+			"message.delta": function* (event) {
+				textBuffer += event.delta;
+				yield* emitThinkingEvent(event);
+				return false;
+			},
+			message: function* (event) {
+				finalText = event.content;
+				sawMessage = true;
+				yield* emitThinkingEvent(event);
+				return false;
+			},
+			"thinking.delta": function* (event) {
+				reasoningSummaryBuffer += event.delta;
+				yield* emitThinkingEvent(event);
+				return false;
+			},
+			thinking: function* (event) {
+				finalReasoningSummary = event.summary;
+				sawThinking = true;
+				yield* emitThinkingEvent(event);
+				return false;
+			},
+			"tool.start": function* (event) {
+				toolCalls.push({ id: event.callId, name: event.name, args: event.args });
+				yield* emitStatusEvent(AgentStatusKind.CallingTool, event.name);
+				return false;
+			},
+			"tool.end": function* (event) {
+				yield event;
+				return false;
+			},
+			artifact: function* (event) {
+				yield event;
+				return false;
+			},
+			error: function* (event) {
+				streamError = toError(event.error);
+				errorEmitted = true;
+				yield event;
+				yield* emitStatusEvent(AgentStatusKind.Error);
+				return true;
+			},
+			done: function* () {
+				return false;
+			},
+		};
+
+		const handleStreamEvent = function* (event: AgentEvent): Generator<AgentEvent, boolean, void> {
+			const handler = streamHandlers[event.type] as (
+				evt: AgentEvent
+			) => Generator<AgentEvent, boolean, void>;
+			return yield* handler(event);
+		};
+
 		try {
-			let promptMessages = loopMessages;
-			if (skillListMessage) {
-				const systemIndex = loopMessages.findIndex(
-					(message) => "role" in message && message.role === "system"
-				);
-				if (systemIndex === -1) {
-					promptMessages = [skillListMessage, ...loopMessages];
-				} else {
-					promptMessages = [
-						...loopMessages.slice(0, systemIndex + 1),
-						skillListMessage,
-						...loopMessages.slice(systemIndex + 1),
-					];
-				}
-			}
+			const promptMessages = withSystemAfter(loopMessages, skillListMessage);
 			const stream = await generate(promptMessages, toolDefs, signal);
 			streamLoop: for await (const event of stream) {
-				switch (event.type) {
-					case "status": {
-						const status = emitStatus(event.status.kind, event.status.toolName, event.status.label);
-						if (O.isSome(status)) {
-							yield status.value;
-						}
-						break;
-					}
-					case "message.delta": {
-						const status = emitStatus(AgentStatusKind.Thinking);
-						if (O.isSome(status)) {
-							yield status.value;
-						}
-						textBuffer += event.delta;
-						yield event;
-						break;
-					}
-					case "message": {
-						const status = emitStatus(AgentStatusKind.Thinking);
-						if (O.isSome(status)) {
-							yield status.value;
-						}
-						finalText = event.content;
-						sawMessage = true;
-						yield event;
-						break;
-					}
-					case "thinking.delta": {
-						const status = emitStatus(AgentStatusKind.Thinking);
-						if (O.isSome(status)) {
-							yield status.value;
-						}
-						reasoningSummaryBuffer += event.delta;
-						yield event;
-						break;
-					}
-					case "thinking": {
-						const status = emitStatus(AgentStatusKind.Thinking);
-						if (O.isSome(status)) {
-							yield status.value;
-						}
-						finalReasoningSummary = event.summary;
-						sawThinking = true;
-						yield event;
-						break;
-					}
-					case "tool.start": {
-						toolCalls.push({ id: event.callId, name: event.name, args: event.args });
-						const status = emitStatus(AgentStatusKind.CallingTool, event.name);
-						if (O.isSome(status)) {
-							yield status.value;
-						}
-						break;
-					}
-					case "tool.end":
-					case "artifact": {
-						yield event;
-						break;
-					}
-					case "error": {
-						streamError = event.error;
-						errorEmitted = true;
-						yield event;
-						const status = emitStatus(AgentStatusKind.Error);
-						if (O.isSome(status)) {
-							yield status.value;
-						}
-						break streamLoop;
-					}
-					case "done":
-						break;
-					default:
-						console.error("unrecognized event", event);
-						break;
+				const shouldStop = yield* handleStreamEvent(event);
+				if (shouldStop) {
+					break streamLoop;
 				}
 			}
 		} catch (error) {
-			streamError = error;
+			streamError = toError(error);
 		}
 
 		if (streamError) {
 			if (!errorEmitted) {
 				yield { type: "error", error: streamError };
-				const status = emitStatus(AgentStatusKind.Error);
-				if (O.isSome(status)) {
-					yield status.value;
-				}
+				yield* emitStatusEvent(AgentStatusKind.Error);
 			}
 			break;
 		}
 
-		if (!sawThinking) {
-			const summaryText = finalReasoningSummary ?? reasoningSummaryBuffer;
-			if (summaryText) {
-				yield { type: "thinking", summary: summaryText };
-			}
+		const thinkingEvent = flushThinking(
+			sawThinking,
+			finalReasoningSummary,
+			reasoningSummaryBuffer
+		);
+		if (thinkingEvent) {
+			yield thinkingEvent;
 		}
 
 		if (toolCalls.length > 0) {
@@ -313,147 +505,24 @@ async function* runLoop(
 				if (signal?.aborted) {
 					break;
 				}
-				const skill = skillMap.get(call.name);
-				const tool = toolMap.get(call.name);
-				if (!skill && !tool) {
-					const error = new Error(`Unknown tool: ${call.name}`);
-					yield { type: "error", error };
-					addToolOutput(loopMessages, call.id ?? "tool-call", { error: error.message });
+
+				const args = normalizeToolArgs(call.args);
+				yield* emitStatusEvent(AgentStatusKind.CallingTool, call.name);
+				addToolCall(loopMessages, call);
+
+				const resolved = resolveTarget(call, args);
+
+				if (E.isLeft(resolved)) {
+					yield* emitErrorAndOutput(call, resolved.left);
 					continue;
 				}
 
-				const args = normalizeToolArgs(call.args);
-				const status = emitStatus(AgentStatusKind.CallingTool, call.name);
-				if (O.isSome(status)) {
-					yield status.value;
-				}
-				if (call.id) {
-					loopMessages.push({
-						type: "function_call",
-						call_id: call.id,
-						name: call.name,
-						arguments: typeof call.args === "string" ? call.args : JSON.stringify(call.args ?? {}),
-					});
-				}
-
-				let skillInput: SkillCallArgs | null = null;
-				let skillDepthValue: number | null = null;
-				if (skill) {
-					const parsed = parseSkillCallArgs(args);
-					if (E.isLeft(parsed)) {
-						yield { type: "error", error: parsed.left };
-						addToolOutput(loopMessages, call.id ?? "tool-call", { error: String(parsed.left) });
-						const errorStatus = emitStatus(AgentStatusKind.Error, call.name);
-						if (O.isSome(errorStatus)) {
-							yield errorStatus.value;
-						}
-						continue;
-					}
-					skillInput = parsed.right;
-					skillDepthValue = skillDepth + 1;
-				}
-
-				if (skill && skillInput && skillDepthValue !== null) {
-					yield {
-						type: "tool.start",
-						name: call.name,
-						args,
-						callId: call.id,
-						isSkill: true,
-						depth: skillDepthValue,
-						input: skillInput,
-					};
-				} else {
-					yield { type: "tool.start", name: call.name, args, callId: call.id };
-				}
+				const target = resolved.right;
 
 				try {
-					let result: unknown = null;
-					if (skill && skillInput && skillDepthValue !== null) {
-						const prompt = resolveSkillPrompt(skill, ctx);
-						const childSkills = skill.allowedSkills ?? [];
-						const childTools = skill.tools ?? [];
-						const skillPrompt = pipe(
-							prompt
-								.replace(/<script[\s\S]*?<\/script>/gi, "")
-								.replace(/<style[\s\S]*?<\/style>/gi, "")
-								.replace(/<\/?[^>]+>/g, "")
-								.trim(),
-							O.fromPredicate((text) => text.length > 0),
-							O.map((sanitized) => {
-								const subskillsBlock = formatSkills("Subskills", childSkills);
-								if (!subskillsBlock) {
-									return sanitized;
-								}
-								return [
-									sanitized,
-									"",
-									"Call subskills when they help complete the task.",
-									"If the user mentions a subskill as `$name`, treat it as a suggestion (not a requirement).",
-									subskillsBlock,
-								].join("\n");
-							}),
-							E.fromOption(() => new Error("Skill prompt is empty after sanitization.")),
-							E.getOrElseW((error) => {
-								throw error;
-							})
-						);
-						const nestedMessages: Message[] = [
-							{ role: "system", content: BASE_SYSTEM_PROMPT },
-							{ role: "system", content: skillPrompt },
-							...(skillInput.history ?? []),
-							{ role: "user", content: skillInput.task },
-						];
-						let skillText = "";
-						for await (const ev of runLoop(
-							nestedMessages,
-							signal,
-							ctx,
-							childTools,
-							childSkills,
-							skillDepthValue,
-							null,
-							maxSteps,
-							generate
-						)) {
-							if (ev.type === "message") {
-								skillText = ev.content;
-								continue;
-							}
-							if (
-								(ev.type === "tool.start" || ev.type === "tool.end") &&
-								"isSkill" in ev &&
-								ev.isSkill
-							) {
-								yield ev;
-								continue;
-							}
-							if (ev.type === "error") {
-								yield ev;
-							}
-						}
-						result = skillText;
-					} else if (tool) {
-						result = await tool.run(args, ctx);
-					}
-
-					if (skill && skillDepthValue !== null) {
-						yield { type: "tool.end", name: call.name, result, isSkill: true, depth: skillDepthValue };
-					} else {
-						yield { type: "tool.end", name: call.name, result };
-					}
-					addToolOutput(loopMessages, call.id ?? "tool-call", result ?? null);
-					const toolResultStatus = emitStatus(AgentStatusKind.ToolResult, call.name);
-					if (O.isSome(toolResultStatus)) {
-						yield toolResultStatus.value;
-					}
+					yield* runToolCall(call, args, target);
 				} catch (error) {
-					yield { type: "error", error };
-					addToolOutput(loopMessages, call.id ?? "tool-call", { error: String(error) });
-					const errorStatus = emitStatus(AgentStatusKind.Error, call.name);
-					if (O.isSome(errorStatus)) {
-						yield errorStatus.value;
-					}
+					yield* emitErrorAndOutput(call, toError(error));
 				}
 			}
 			continue;
@@ -465,10 +534,7 @@ async function* runLoop(
 			if (!sawMessage) {
 				yield { type: "message", content: finalContent };
 			}
-			const doneStatus = emitStatus(AgentStatusKind.Done);
-			if (O.isSome(doneStatus)) {
-				yield doneStatus.value;
-			}
+			yield* emitStatusEvent(AgentStatusKind.Done);
 			break;
 		}
 

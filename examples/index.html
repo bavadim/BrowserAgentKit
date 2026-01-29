@@ -179,5 +179,17 @@
     </div>
 
     <script type="module" src="./main.js"></script>
+    <script type="text/markdown" id="skill-canvas-render">
+# Goal
+Create or update HTML inside the canvas.
+
+# Steps
+1) Use the JS interpreter. It provides `x()`, `replaceSubtree()`, `diffSubtree()`, and `viewRoot`.
+2) Build HTML as a string and call `replaceSubtree(x("/")[0], html)` to replace the canvas content.
+3) Keep the response short and confirm what changed.
+
+# Notes
+- The agent can only see the canvas subtree.
+    </script>
   </body>
 </html>
