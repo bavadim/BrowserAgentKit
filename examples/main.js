@@ -1,15 +1,12 @@
 import OpenAI from "openai";
 import { createAgent, jsInterpreterTool, localStoreTool } from "browseragentkit";
 
-const logEl = document.getElementById("log");
 const runBtn = document.getElementById("runBtn");
 const chatLog = document.getElementById("chatLog");
 const canvas = document.getElementById("canvas");
 const baseUrlInput = document.getElementById("baseUrl");
 const apiKeyInput = document.getElementById("apiKey");
 const promptInput = document.getElementById("prompt");
-const statusEl = document.getElementById("status");
-const statusTextEl = document.getElementById("statusText");
 
 const params = new URLSearchParams(window.location.search);
 if (baseUrlInput && params.has("baseUrl")) {
@@ -40,7 +37,7 @@ function addMessage(role, text) {
 
 let activeAssistantBubble = null;
 let activeAssistantText = "";
-let currentStatus = null;
+let activeAssistantIsStatus = false;
 let thinkingSummary = "";
 
 function ensureAssistantBubble() {
@@ -66,22 +63,27 @@ function appendAssistantDelta(delta) {
 	if (!bubble) {
 		return;
 	}
+	if (activeAssistantIsStatus) {
+		bubble.classList.remove("status");
+		activeAssistantIsStatus = false;
+		activeAssistantText = "";
+	}
 	activeAssistantText += delta;
 	bubble.textContent = activeAssistantText;
 }
 
 function finalizeAssistantMessage(text) {
-	if (text) {
-		const bubble = ensureAssistantBubble();
-		if (bubble) {
-			bubble.textContent = text;
-		}
+	const bubble = ensureAssistantBubble();
+	if (bubble) {
+		bubble.classList.remove("status");
+		bubble.textContent = text ?? "";
 	}
 	activeAssistantBubble = null;
 	activeAssistantText = "";
+	activeAssistantIsStatus = false;
 }
 
-function formatStatus(status) {
+function statusLabel(status) {
 	if (status.label) {
 		return status.label;
 	}
@@ -94,23 +96,19 @@ function formatStatus(status) {
 			return status.toolName ? `Получен ответ от ${status.toolName}.` : "Получен ответ от инструмента.";
 		case "error":
 			return "Ошибка.";
-		case "done":
 		default:
 			return "";
 	}
 }
 
-function renderStatus() {
-	if (statusEl) {
-		statusEl.classList.add("hidden");
+function showAssistantStatus(status) {
+	if (!status || status.kind === "done") {
+		if (activeAssistantIsStatus) {
+			finalizeAssistantMessage("");
+		}
+		return;
 	}
-	if (statusTextEl) {
-		statusTextEl.textContent = "";
-	}
-}
-
-function renderStatusBubble(status) {
-	const label = status ? formatStatus(status) : "";
+	const label = statusLabel(status);
 	if (!label) {
 		return;
 	}
@@ -118,26 +116,22 @@ function renderStatusBubble(status) {
 	if (!bubble) {
 		return;
 	}
+	bubble.classList.add("status");
 	bubble.textContent = label;
 	activeAssistantText = "";
+	activeAssistantIsStatus = true;
 }
 
 function setStatus(status) {
-	currentStatus = status;
 	if (status.kind !== "thinking") {
 		thinkingSummary = "";
 	}
-	renderStatus();
-	renderStatusBubble(status);
+	showAssistantStatus(status);
 }
 
 function setThinkingSummary(summary) {
 	thinkingSummary = summary;
-	if (!currentStatus || currentStatus.kind !== "thinking") {
-		currentStatus = { kind: "thinking" };
-	}
-	renderStatus();
-	renderStatusBubble(currentStatus);
+	showAssistantStatus({ kind: "thinking" });
 }
 
 function appendThinkingDelta(delta) {
@@ -450,9 +444,6 @@ runBtn.addEventListener("click", async () => {
 		addMessage("assistant", "Agent is not ready.");
 		return;
 	}
-	if (logEl) {
-		logEl.textContent = "";
-	}
 
 	const prompt = promptInput.value.trim();
 
@@ -464,13 +455,10 @@ runBtn.addEventListener("click", async () => {
 	runBtn.disabled = true;
 	activeAssistantBubble = null;
 	activeAssistantText = "";
-	currentStatus = null;
 	thinkingSummary = "";
-	renderStatus();
 
 	try {
 		for await (const ev of agent.run(prompt)) {
-			console.log(ev)
 			if (ev.type === "message.delta") {
 				appendAssistantDelta(ev.delta);
 			}

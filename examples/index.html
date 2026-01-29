@@ -126,34 +126,10 @@
         border: 1px solid #e5e7eb;
         margin: 10px 0 0;
       }
-      .status {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 0.95rem;
-        color: #6b7280;
-        margin-top: 8px;
-      }
-      .status.hidden {
-        display: none;
-      }
-      .status .dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 999px;
-        background: #f59e0b;
-        animation: pulse 1s ease-in-out infinite;
-      }
-      @keyframes pulse {
-        0% {
-          opacity: 0.4;
-        }
-        50% {
-          opacity: 1;
-        }
-        100% {
-          opacity: 0.4;
-        }
+      .message.assistant .bubble.status {
+        background: #fef3c7;
+        color: #92400e;
+        font-style: italic;
       }
       @media (max-width: 900px) {
         .app {
@@ -191,15 +167,6 @@
         <textarea id="prompt" rows="3">Create a hero section with a title and a button.</textarea>
 
         <button id="runBtn">Send</button>
-        <div id="status" class="status hidden">
-          <span class="dot"></span>
-          <span id="statusText"></span>
-        </div>
-
-        <details>
-          <summary>Events</summary>
-          <pre id="log"></pre>
-        </details>
       </section>
 
       <section class="panel">
