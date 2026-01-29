@@ -2,7 +2,7 @@
 
 BrowserAgentKit is a TypeScript library for running a **code agent in the browser**.
 
-Demo: https://bavadim.github.io/BrowserAgentKit/
+[Demo](https://bavadim.github.io/BrowserAgentKit/)
 
 Highlights:
 - Browser-first agent loop (observe → plan → act)
