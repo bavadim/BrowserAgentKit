@@ -4,7 +4,7 @@ BrowserAgentKit is a TypeScript library for running a **code agent in the browse
 
 Implemented:
 - agent loop (observe → plan → act)
-- **skills** (prompt-based, Markdown text)
+- **skills** (prompt-based tools, Markdown in the DOM)
 - tools:
   - JS interpreter
   - LocalStore (persistent KV)
@@ -22,7 +22,13 @@ npm i browseragentkit
 
 ```ts
 import OpenAI from "openai";
-import { createAgent, jsInterpreterTool, localStoreTool } from "browseragentkit";
+import {
+  createAgentMessages,
+  createOpenAIResponsesAdapter,
+  jsInterpreterTool,
+  localStoreTool,
+  runAgent,
+} from "browseragentkit";
 
 const client = new OpenAI({
   baseURL: "/api/llm", // your backend proxy
@@ -30,100 +36,62 @@ const client = new OpenAI({
   dangerouslyAllowBrowser: true,
 });
 
+// Somewhere in your HTML:
+// <script type="text/markdown" id="skill-canvas-render">
+// # Goal
+// Create or update HTML inside the canvas.
+//
+// # Steps
+// 1) Use the JS interpreter helpers: `x()`, `replaceSubtree()`, and `viewRoot`.
+// 2) Build HTML as a string and call `replaceSubtree(x("/")[0], html)`.
+// 3) Return a short confirmation message.
+//
+// # Notes
+// - Keep it deterministic and short.
+// </script>
+
 const skills = [
   {
     name: "canvas.render",
     description: "Renders HTML inside the canvas using the JS interpreter helpers.",
-    promptMd: `
-# Goal
-Create or update HTML inside the canvas.
-
-# Steps
-1) Use the JS interpreter helpers: \`x()\`, \`replaceSubtree()\`, and \`viewRoot\`.
-2) Build HTML as a string and call \`replaceSubtree(x("/")[0], html)\`.
-3) Return a short confirmation message.
-
-# Notes
-- Keep it deterministic and short.
-`,
+    promptSelector: "//script[@id='skill-canvas-render']",
   },
 ];
 
-const agent = createAgent({
-  generate: async function* (messages, tools, signal) {
-    const stream = await client.responses.create(
-      {
-        model: "gpt-4.1-mini",
-        input: messages,
-        tools,
-        tool_choice: tools?.length ? "auto" : undefined,
-        stream: true,
-      },
-      signal ? { signal } : undefined
-    );
-    const toolArgBuffers = new Map();
-    for await (const event of stream) {
-      switch (event.type) {
-        case "response.output_text.delta":
-          yield { type: "message.delta", delta: event.delta };
-          break;
-        case "response.output_text.done":
-          yield { type: "message", content: event.text };
-          break;
-        case "response.reasoning_summary_text.delta":
-          yield { type: "thinking.delta", delta: event.delta };
-          break;
-        case "response.reasoning_summary_text.done":
-          yield { type: "thinking", summary: event.text };
-          break;
-        case "response.function_call_arguments.delta": {
-          const existing = toolArgBuffers.get(event.item_id) ?? "";
-          toolArgBuffers.set(event.item_id, existing + event.delta);
-          break;
-        }
-        case "response.function_call_arguments.done": {
-          const args = event.arguments ?? toolArgBuffers.get(event.item_id) ?? "";
-          if (event.name) {
-            yield { type: "tool.start", name: event.name, args, callId: event.item_id };
-          }
-          break;
-        }
-        case "response.failed":
-        case "error":
-          yield { type: "error", error: event.error ?? new Error("Response failed") };
-          break;
-      }
-    }
-  },
+const generate = createOpenAIResponsesAdapter({
+  client,
+  model: "gpt-4.1-mini",
+});
+
+const agentMessages = createAgentMessages();
+const agentOptions = {
+  generate,
   viewRoot: document.getElementById("canvas"),
   skills,
   tools: [
     jsInterpreterTool(),
     localStoreTool({ namespace: "bak" }),
   ],
-  policies: { maxSteps: 25 },
-});
+  maxSteps: 25,
+};
 
-for await (const ev of agent.run("Create a hero section on the canvas")) {
+for await (const ev of runAgent(agentMessages, agentOptions, "Create a hero section on the canvas")) {
   // handle events in your UI / logs
   console.log(ev);
 }
 ```
 
-`generate(messages, tools, signal)` must return (or resolve to) an `AsyncIterable` of `AgentEvent` objects. When using the OpenAI Responses stream, map its events into AgentEvents inside `generate` (see above or `examples/main.js`).
-The agent preserves conversation history across runs; call `agent.reset()` to clear it (system prompt is kept).
-If `run()` is called while a run is already active, the call is ignored.
+`generate(messages, tools, signal)` must return (or resolve to) an `AsyncIterable` of `AgentEvent` objects. When using the OpenAI Responses stream, you can reuse `createOpenAIResponsesAdapter` from the library (see above or `examples/main.js`).
+The agent preserves conversation history across runs; create a fresh `createAgentMessages()` array to clear it (system prompt is kept).
+If `runAgent()` is called again with the same messages array, the previous run is aborted.
 
 ## Skills
 
-A skill is a **Markdown prompt** registered in the agent constructor:
+A skill is a **tool** that runs the LLM with a Markdown prompt stored in the DOM.
+Store prompts in a script tag (or any DOM element) and pass an XPath selector:
 
-```ts
-const skills = [
-  {
-    name: "example.skill",
-    description: "One-line description (optional but recommended).",
-    promptMd: `
+```html
+<script type="text/markdown" id="skill-example">
 # Goal
 ...
 
@@ -133,12 +101,34 @@ const skills = [
 
 # Output
 - What the agent should return.
-`,
+</script>
+```
+
+```ts
+const skills = [
+  {
+    name: "example.skill",
+    description: "One-line description (optional but recommended).",
+    promptSelector: "//script[@id='skill-example']",
+    // Optional: scope what the skill can call.
+    tools: [jsInterpreterTool()],
+    allowedSkills: [
+      {
+        name: "example.subskill",
+        description: "Nested skill (only available inside this skill).",
+        promptSelector: "//script[@id='skill-example']",
+      },
+    ],
   },
 ];
 ```
 
-The agent selects and executes skills inside the agent loop.
+The agent exposes each skill as a function-calling tool. When a skill runs, the agent:
+- Builds a child cycle from scratch (base system prompt → skill prompt → optional history → task).
+- Sanitizes the skill prompt to Markdown-only.
+- Makes only the skill's `tools` and `allowedSkills` available to the child cycle.
+The skill tool arguments are `{ task: string; history?: EasyInputMessage[] }`.
+At the start of each root cycle, the agent injects a system message listing available skills. If the user mentions `$skillName`, it is treated as a suggestion.
 
 ## Tools
 
@@ -176,7 +166,7 @@ You can prefill demo fields via query params:
 
 ## Agent API (async generator)
 
-`agent.run(input: string)` returns an async generator of events.
+`runAgent(messages, options, input)` returns an async generator of events.
 
 Typical event kinds:
 
@@ -190,7 +180,10 @@ Typical event kinds:
 Consume it with:
 
 ```ts
-for await (const ev of agent.run("...")) {
+const agentMessages = createAgentMessages();
+const agentOptions = { generate, tools: [], skills: [] };
+
+for await (const ev of runAgent(agentMessages, agentOptions, "...")) {
   // update UI / state
 }
 ```

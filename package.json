@@ -38,6 +38,7 @@
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {
+    "fp-ts": "^2.16.1",
     "openai": "^6.16.0"
   },
   "devDependencies": {

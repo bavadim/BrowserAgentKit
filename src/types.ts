@@ -6,9 +6,11 @@ import type {
 
 export type JsonSchema = {
 	type: string;
+	description?: string;
 	properties?: Record<string, unknown>;
 	required?: string[];
 	additionalProperties?: boolean;
+	items?: JsonSchema;
 };
 
 export type ToolContext = {
@@ -29,7 +31,9 @@ export type Tool = {
 export type Skill = {
 	name: string;
 	description?: string;
-	promptMd: string;
+	promptSelector: string;
+	allowedSkills?: Skill[];
+	tools?: Tool[];
 };
 
 export type ToolCall = {
@@ -41,8 +45,9 @@ export type ToolCall = {
 export type Message = EasyInputMessage | ResponseInputItem;
 export type ToolDefinition = ResponseTool;
 
-export type AgentPolicies = {
-	maxSteps?: number;
+export type SkillCallArgs = {
+	task: string;
+	history?: EasyInputMessage[];
 };
 
 export enum AgentStatusKind {
@@ -59,14 +64,42 @@ export type AgentStatus = {
 	toolName?: string;
 };
 
+export type ToolStartBase = {
+	type: "tool.start";
+	name: string;
+	args: unknown;
+	callId?: string;
+};
+
+export type SkillToolStart = ToolStartBase & {
+	isSkill: true;
+	depth: number;
+	input: SkillCallArgs;
+};
+
+export type ToolStart = ToolStartBase | (ToolStartBase & { isSkill?: false }) | SkillToolStart;
+
+export type ToolEndBase = {
+	type: "tool.end";
+	name: string;
+	result: unknown;
+};
+
+export type SkillToolEnd = ToolEndBase & {
+	isSkill: true;
+	depth: number;
+};
+
+export type ToolEnd = ToolEndBase | (ToolEndBase & { isSkill?: false }) | SkillToolEnd;
+
 export type AgentEvent =
 	| { type: "message"; content: string }
 	| { type: "message.delta"; delta: string }
 	| { type: "thinking"; summary: string }
 	| { type: "thinking.delta"; delta: string }
 	| { type: "status"; status: AgentStatus }
-	| { type: "tool.start"; name: string; args: unknown; callId?: string }
-	| { type: "tool.end"; name: string; result: unknown }
+	| ToolStart
+	| ToolEnd
 	| { type: "artifact"; name: string; data: unknown }
 	| { type: "error"; error: unknown }
 	| { type: "done" };
@@ -77,14 +110,5 @@ export type AgentOptions = {
 	context?: Partial<ToolContext>;
 	skills?: Skill[];
 	tools?: Tool[];
-	policies?: AgentPolicies;
-};
-
-export type RunOptions = {
-	signal?: AbortSignal;
-};
-
-export type AgentRunner = {
-	run: (input: string, runOptions?: RunOptions) => AsyncGenerator<AgentEvent, void, void>;
-	reset: () => void;
+	maxSteps?: number;
 };

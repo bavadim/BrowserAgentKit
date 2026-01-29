@@ -18,6 +18,9 @@ This repo is a single package with a browser demo:
 ESLint is configured; use **tabs** for indentation. Match existing examples in `README.md` and use clear, descriptive names. Tool descriptions live near the tool definition in `src/tools.ts`.
 Use explicit types on function signatures (args and return types). Type definitions belong in `src/types.ts` to keep logic files focused. Helper functions should remain private inside their modules; do not create separate helper files.
 Prefer flat argument lists for function definitions; avoid deeply nested or overly abstracted type taxonomies. Keep type shapes shallow and avoid nested types when possible.
+Avoid "Runner/Doer" objects or classes (e.g., `AgentRunner`-style interfaces). Expose actions as functions and keep data separate.
+Do not bundle execution context into a single object (e.g., `loopCtx`); pass required data as explicit, flat parameters.
+Prefer functional style: pure(ish) functions, explicit inputs/outputs, minimal mutable state, and no action-bearing objects.
 
 ## Testing Guidelines
 Tests live in `test/` and use Node’s built‑in test runner (`node --test`). If you add tests, keep them focused on public API behavior.
