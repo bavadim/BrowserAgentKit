@@ -6,6 +6,7 @@ import {
 	runAgent,
 	jsInterpreterTool,
 	localStoreTool,
+	withStatus,
 } from "browseragentkit";
 
 const runBtn = document.getElementById("runBtn");
@@ -195,7 +196,7 @@ runBtn.addEventListener("click", async () => {
 	thinkingSummary = "";
 
 	try {
-		for await (const ev of runAgent(
+		for await (const ev of withStatus(runAgent(
 			agentMessages,
 			generate,
 			prompt,
@@ -203,7 +204,7 @@ runBtn.addEventListener("click", async () => {
 			skills,
 			25,
 			agentContext
-		)) {
+		))) {
 			if (E.isLeft(ev)) {
 				const error = ev.left;
 				if (error instanceof Error) {

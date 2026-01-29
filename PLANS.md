@@ -183,3 +183,32 @@ Add tests from the updated plan (see “Tests” section below), in particular:
 
 ## Optional Extensions
 - TODO (compact): dialogue length must not exceed a configured fraction of available memory.
+
+---
+
+# Refactor Ideas (Agent Simplification)
+
+## Scope (include)
+1. **Make runLoop a pure “machine”**
+	- Move side-effect helpers (tool call tracking, prompt insertion, tool output) into a separate module (e.g. `loop.ts`).
+	- Shape: `step(state, input) -> { state, outputs }` and `drive(generate, state) -> Stream`.
+
+2. **Remove AgentStatus from core**
+	- Keep core agent streaming only `message/tool/artifact`.
+	- Move status emission to a wrapper/middleware around `runAgent`.
+
+3. **Extract tool/skill execution**
+	- Move `runToolCall` + `runSkill` into `tool.ts` / `skill.ts`.
+	- `runLoop` becomes: resolve target → execute → append outputs.
+
+4. **Unify Either stream handling**
+	- Introduce a single combinator like `liftEitherStream` to short-circuit on `Left`.
+	- Replace all per-loop `foldStreamEvent/stopWithError` patterns with one helper.
+
+6. **Contract: generate never throws**
+	- Make `AgentGenerate` return only `Either` (no exceptions).
+	- Remove `safeGenerate`/`safeStream` entirely.
+
+## Out of Scope (explicitly excluded)
+5. Simplify message types / create a new `AgentMessage` type.
+7. Merge `runLoop` + `runAgent` into one generator.

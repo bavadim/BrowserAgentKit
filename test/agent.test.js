@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import * as E from "fp-ts/lib/Either.js";
-import { createAgentMessages, runAgent } from "../dist/index.js";
+import { createAgentMessages, runAgent, withStatus } from "../dist/index.js";
 
 async function collectEvents(generator) {
 	const events = [];
@@ -267,7 +267,7 @@ test("preserves non-JSON tool args", async () => {
 
 test("reports model errors", async () => {
 	const generate = async function* () {
-		throw new Error("model down");
+		yield E.left(new Error("model down"));
 	};
 
 	const messages = createAgentMessages();
@@ -716,7 +716,7 @@ test("status events cover main states", async () => {
 	};
 
 	const messages = createAgentMessages();
-	const events = await runAgentEvents(messages, generate, "hi", [echoTool]);
+	const events = await collectEvents(withStatus(runAgent(messages, generate, "hi", [echoTool])));
 	const rights = rightEvents(events);
 
 	const statusKinds = new Set(rights.filter((ev) => ev.type === "status").map((ev) => ev.status.kind));

@@ -196,4 +196,20 @@ for await (const ev of runAgent(agentMessages, generate, "...")) {
   }
   // update UI / state
 }
+
+If you want status events, wrap the stream:
+
+```ts
+import { withStatus } from "browseragentkit";
+
+for await (const ev of withStatus(runAgent(agentMessages, generate, "..."))) {
+  if (E.isLeft(ev)) {
+    console.error(ev.left);
+    break;
+  }
+  if (ev.right.type === "status") {
+    console.log(ev.right.status);
+  }
+}
+```
 ```

@@ -1,7 +1,6 @@
 import { pipe } from "fp-ts/lib/function.js";
 import * as E from "fp-ts/lib/Either.js";
 import * as O from "fp-ts/lib/Option.js";
-import { AgentStatusKind } from "./types";
 import type { AgentEvent, AgentStreamEvent, Message, ToolDefinition } from "./types";
 
 const toError = (error: unknown): Error =>
@@ -178,7 +177,6 @@ export function createOpenAIResponsesAdapter(
 				case "response.queued":
 				case "response.created":
 				case "response.in_progress":
-					yield right({ type: "status", status: { kind: AgentStatusKind.Thinking } });
 					break;
 				case "response.output_text.delta": {
 					const delta = event.delta ?? "";

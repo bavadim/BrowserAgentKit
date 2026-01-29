@@ -64,6 +64,8 @@ export type AgentStatus = {
 	toolName?: string;
 };
 
+export type AgentStatusEvent = { type: "status"; status: AgentStatus };
+
 export type ToolStartBase = {
 	type: "tool.start";
 	name: string;
@@ -97,13 +99,13 @@ export type AgentEvent =
 	| { type: "message.delta"; delta: string }
 	| { type: "thinking"; summary: string }
 	| { type: "thinking.delta"; delta: string }
-	| { type: "status"; status: AgentStatus }
 	| ToolStart
 	| ToolEnd
 	| { type: "artifact"; name: string; data: unknown }
 	| { type: "done" };
 
 export type AgentStreamEvent = Either<Error, AgentEvent>;
+export type AgentStatusStreamEvent = Either<Error, AgentEvent | AgentStatusEvent>;
 
 export type AgentGenerate = (
 	messages: Message[],
