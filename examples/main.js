@@ -193,7 +193,51 @@ const agent = canvas
 				},
 				signal ? { signal } : undefined
 			);
-			return stream;
+			const toolArgBuffers = new Map();
+			for await (const event of stream) {
+				switch (event.type) {
+					case "response.queued":
+					case "response.created":
+					case "response.in_progress":
+						yield { type: "status", status: { kind: "thinking" } };
+						break;
+					case "response.output_text.delta":
+						yield { type: "message.delta", delta: event.delta };
+						break;
+					case "response.output_text.done":
+						yield { type: "message", content: event.text };
+						break;
+					case "response.reasoning_summary_text.delta":
+						yield { type: "thinking.delta", delta: event.delta };
+						break;
+					case "response.reasoning_summary_text.done":
+						yield { type: "thinking", summary: event.text };
+						break;
+					case "response.function_call_arguments.delta": {
+						const existing = toolArgBuffers.get(event.item_id) ?? "";
+						toolArgBuffers.set(event.item_id, existing + event.delta);
+						break;
+					}
+					case "response.function_call_arguments.done": {
+						const args = event.arguments ?? toolArgBuffers.get(event.item_id) ?? "";
+						if (event.name) {
+							yield { type: "tool.start", name: event.name, args, callId: event.item_id };
+						}
+						break;
+					}
+					case "response.failed":
+						yield { type: "error", error: event.error ?? new Error("Response failed") };
+						break;
+					case "error":
+						yield { type: "error", error: event.error };
+						break;
+					case "response.completed":
+						break;
+					default:
+						console.error("unrecognized event", event);
+						break;
+				}
+			}
 		},
 		viewRoot: canvas,
 		skills,

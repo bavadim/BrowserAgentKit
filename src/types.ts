@@ -45,36 +45,7 @@ export type Generate = (
 	messages: Message[],
 	tools?: ToolDefinition[],
 	signal?: AbortSignal
-) => AsyncIterable<StreamingEvent> | Promise<AsyncIterable<StreamingEvent>>;
-
-export enum StreamingEventType {
-	ResponseQueued = "response.queued",
-	ResponseCreated = "response.created",
-	ResponseInProgress = "response.in_progress",
-	ResponseOutputTextDelta = "response.output_text.delta",
-	ResponseOutputTextDone = "response.output_text.done",
-	ResponseReasoningSummaryTextDelta = "response.reasoning_summary_text.delta",
-	ResponseReasoningSummaryTextDone = "response.reasoning_summary_text.done",
-	ResponseFunctionCallArgumentsDelta = "response.function_call_arguments.delta",
-	ResponseFunctionCallArgumentsDone = "response.function_call_arguments.done",
-	ResponseCompleted = "response.completed",
-	ResponseFailed = "response.failed",
-	Error = "error",
-}
-
-export type StreamingEvent =
-	| { type: StreamingEventType.ResponseQueued }
-	| { type: StreamingEventType.ResponseCreated }
-	| { type: StreamingEventType.ResponseInProgress }
-	| { type: StreamingEventType.ResponseOutputTextDelta; item_id?: string; delta: string }
-	| { type: StreamingEventType.ResponseOutputTextDone; item_id?: string; text: string }
-	| { type: StreamingEventType.ResponseReasoningSummaryTextDelta; item_id?: string; delta: string }
-	| { type: StreamingEventType.ResponseReasoningSummaryTextDone; item_id?: string; text: string }
-	| { type: StreamingEventType.ResponseFunctionCallArgumentsDelta; item_id: string; delta: string }
-	| { type: StreamingEventType.ResponseFunctionCallArgumentsDone; item_id: string; name?: string; arguments?: string }
-	| { type: StreamingEventType.ResponseCompleted }
-	| { type: StreamingEventType.ResponseFailed; error?: unknown }
-	| { type: StreamingEventType.Error; error: unknown };
+) => AsyncIterable<AgentEvent> | Promise<AsyncIterable<AgentEvent>>;
 
 export type AgentPolicies = {
 	maxSteps?: number;
@@ -100,7 +71,7 @@ export type AgentEvent =
 	| { type: "thinking"; summary: string }
 	| { type: "thinking.delta"; delta: string }
 	| { type: "status"; status: AgentStatus }
-	| { type: "tool.start"; name: string; args: unknown }
+	| { type: "tool.start"; name: string; args: unknown; callId?: string }
 	| { type: "tool.end"; name: string; result: unknown }
 	| { type: "artifact"; name: string; data: unknown }
 	| { type: "error"; error: unknown }

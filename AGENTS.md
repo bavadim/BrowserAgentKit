@@ -17,6 +17,7 @@ This repo is a single package with a browser demo:
 ## Coding Style & Naming Conventions
 ESLint is configured; use **tabs** for indentation. Match existing examples in `README.md` and use clear, descriptive names. Tool descriptions live near the tool definition in `src/tools.ts`.
 Use explicit types on function signatures (args and return types). Type definitions belong in `src/types.ts` to keep logic files focused. Helper functions should remain private inside their modules; do not create separate helper files.
+Prefer flat argument lists for function definitions; avoid deeply nested or overly abstracted type taxonomies. Keep type shapes shallow and avoid nested types when possible.
 
 ## Testing Guidelines
 Tests live in `test/` and use Node’s built‑in test runner (`node --test`). If you add tests, keep them focused on public API behavior.
@@ -40,4 +41,3 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - run tests after feature has completed
 - run the linter before committing changes
 - update README.md whenever API, usage, or workflow changes
-- commit changes in the case tests have passed

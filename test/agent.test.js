@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createAgent, StreamingEventType } from "../dist/index.js";
+import { createAgent } from "../dist/index.js";
 
 async function collectEvents(generator) {
 	const events = [];
@@ -21,12 +21,10 @@ function streamFrom(events) {
 test("agent returns a message", async () => {
 	const generate = () =>
 		streamFrom([
-			{ type: StreamingEventType.ResponseCreated },
-			{ type: StreamingEventType.ResponseReasoningSummaryTextDelta, delta: "short " },
-			{ type: StreamingEventType.ResponseReasoningSummaryTextDone, text: "short summary" },
-			{ type: StreamingEventType.ResponseOutputTextDelta, delta: "hello" },
-			{ type: StreamingEventType.ResponseOutputTextDone, text: "hello" },
-			{ type: StreamingEventType.ResponseCompleted },
+			{ type: "thinking.delta", delta: "short " },
+			{ type: "thinking", summary: "short summary" },
+			{ type: "message.delta", delta: "hello" },
+			{ type: "message", content: "hello" },
 		]);
 
 	const agent = createAgent({ generate });
@@ -45,11 +43,7 @@ test("agent returns a message", async () => {
 test("agent accepts generate that resolves to a stream", async () => {
 	const generate = async () => {
 		await Promise.resolve();
-		return streamFrom([
-			{ type: StreamingEventType.ResponseCreated },
-			{ type: StreamingEventType.ResponseOutputTextDone, text: "ok" },
-			{ type: StreamingEventType.ResponseCompleted },
-		]);
+		return streamFrom([{ type: "message", content: "ok" }]);
 	};
 
 	const agent = createAgent({ generate });
@@ -64,21 +58,15 @@ test("agent executes tools when requested", async () => {
 		if (calls === 0) {
 			calls += 1;
 			return streamFrom([
-				{ type: StreamingEventType.ResponseCreated },
 				{
-					type: StreamingEventType.ResponseFunctionCallArgumentsDone,
-					item_id: "call-1",
+					type: "tool.start",
 					name: "echo",
-					arguments: "{\"value\":\"ok\"}",
+					args: "{\"value\":\"ok\"}",
+					callId: "call-1",
 				},
-				{ type: StreamingEventType.ResponseCompleted },
 			]);
 		}
-		return streamFrom([
-			{ type: StreamingEventType.ResponseCreated },
-			{ type: StreamingEventType.ResponseOutputTextDone, text: "done" },
-			{ type: StreamingEventType.ResponseCompleted },
-		]);
+		return streamFrom([{ type: "message", content: "done" }]);
 	};
 
 	const tool = {
@@ -110,18 +98,14 @@ test("agent emits error on unknown tool", async () => {
 			calls += 1;
 			return streamFrom([
 				{
-					type: StreamingEventType.ResponseFunctionCallArgumentsDone,
-					item_id: "call-1",
+					type: "tool.start",
 					name: "missing",
-					arguments: "{}",
+					args: "{}",
+					callId: "call-1",
 				},
-				{ type: StreamingEventType.ResponseCompleted },
 			]);
 		}
-		return streamFrom([
-			{ type: StreamingEventType.ResponseOutputTextDone, text: "done" },
-			{ type: StreamingEventType.ResponseCompleted },
-		]);
+		return streamFrom([{ type: "message", content: "done" }]);
 	};
 
 	const agent = createAgent({ generate, tools: [] });
@@ -138,18 +122,14 @@ test("agent emits error when tool throws", async () => {
 			calls += 1;
 			return streamFrom([
 				{
-					type: StreamingEventType.ResponseFunctionCallArgumentsDone,
-					item_id: "call-1",
+					type: "tool.start",
 					name: "explode",
-					arguments: "{}",
+					args: "{}",
+					callId: "call-1",
 				},
-				{ type: StreamingEventType.ResponseCompleted },
 			]);
 		}
-		return streamFrom([
-			{ type: StreamingEventType.ResponseOutputTextDone, text: "done" },
-			{ type: StreamingEventType.ResponseCompleted },
-		]);
+		return streamFrom([{ type: "message", content: "done" }]);
 	};
 
 	const tool = {
@@ -174,12 +154,11 @@ test("agent stops after maxSteps", async () => {
 		calls += 1;
 		return streamFrom([
 			{
-				type: StreamingEventType.ResponseFunctionCallArgumentsDone,
-				item_id: `call-${calls}`,
+				type: "tool.start",
 				name: "noop",
-				arguments: "{}",
+				args: "{}",
+				callId: `call-${calls}`,
 			},
-			{ type: StreamingEventType.ResponseCompleted },
 		]);
 	};
 
@@ -207,18 +186,14 @@ test("agent parses JSON tool args", async () => {
 			calls += 1;
 			return streamFrom([
 				{
-					type: StreamingEventType.ResponseFunctionCallArgumentsDone,
-					item_id: "call-1",
+					type: "tool.start",
 					name: "echo",
-					arguments: "{\"value\":\"ok\"}",
+					args: "{\"value\":\"ok\"}",
+					callId: "call-1",
 				},
-				{ type: StreamingEventType.ResponseCompleted },
 			]);
 		}
-		return streamFrom([
-			{ type: StreamingEventType.ResponseOutputTextDone, text: "done" },
-			{ type: StreamingEventType.ResponseCompleted },
-		]);
+		return streamFrom([{ type: "message", content: "done" }]);
 	};
 
 	const tool = {
@@ -244,18 +219,14 @@ test("agent preserves non-JSON tool args", async () => {
 			calls += 1;
 			return streamFrom([
 				{
-					type: StreamingEventType.ResponseFunctionCallArgumentsDone,
-					item_id: "call-1",
+					type: "tool.start",
 					name: "echo",
-					arguments: "not json",
+					args: "not json",
+					callId: "call-1",
 				},
-				{ type: StreamingEventType.ResponseCompleted },
 			]);
 		}
-		return streamFrom([
-			{ type: StreamingEventType.ResponseOutputTextDone, text: "done" },
-			{ type: StreamingEventType.ResponseCompleted },
-		]);
+		return streamFrom([{ type: "message", content: "done" }]);
 	};
 
 	const tool = {
@@ -290,10 +261,7 @@ test("agent reset clears history", async () => {
 	const lengths = [];
 	const generate = (messages) => {
 		lengths.push(messages.length);
-		return streamFrom([
-			{ type: StreamingEventType.ResponseOutputTextDone, text: "ok" },
-			{ type: StreamingEventType.ResponseCompleted },
-		]);
+		return streamFrom([{ type: "message", content: "ok" }]);
 	};
 
 	const agent = createAgent({ generate });

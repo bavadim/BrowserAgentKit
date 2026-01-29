@@ -1,4 +1,4 @@
-import { AgentStatusKind, StreamingEventType } from "./types";
+import { AgentStatusKind } from "./types";
 import type {
 	AgentEvent,
 	AgentOptions,
@@ -145,11 +145,12 @@ export function createAgent(options: AgentOptions): AgentRunner {
 			while (step < maxSteps) {
 				step += 1;
 				const toolCalls: ToolCall[] = [];
-				const toolArgBuffers = new Map<string, string>();
 				let textBuffer = "";
 				let finalText: string | null = null;
 				let reasoningSummaryBuffer = "";
 				let finalReasoningSummary: string | null = null;
+				let sawMessage = false;
+				let sawThinking = false;
 
 				const emitStatus = (status: AgentStatus) => {
 					const key = statusKey(status);
@@ -161,69 +162,84 @@ export function createAgent(options: AgentOptions): AgentRunner {
 				};
 
 				let streamError: unknown = null;
+				let errorEmitted = false;
 				try {
 					const stream = await options.generate(messages, toOpenAITools(tools), runOptions.signal);
-					for await (const event of stream) {
+					streamLoop: for await (const event of stream) {
 						switch (event.type) {
-							case StreamingEventType.ResponseQueued:
-							case StreamingEventType.ResponseCreated:
-							case StreamingEventType.ResponseInProgress: {
-								const status = emitStatus(buildStatus(AgentStatusKind.Thinking));
+							case "status": {
+								const status = emitStatus(event.status);
 								if (status) {
 									yield status;
 								}
 								break;
 							}
-							case StreamingEventType.ResponseOutputTextDelta: {
+							case "message.delta": {
+								const status = emitStatus(buildStatus(AgentStatusKind.Thinking));
+								if (status) {
+									yield status;
+								}
 								textBuffer += event.delta;
-								yield { type: "message.delta", delta: event.delta };
+								yield event;
 								break;
 							}
-							case StreamingEventType.ResponseOutputTextDone: {
-								finalText = event.text;
+							case "message": {
+								const status = emitStatus(buildStatus(AgentStatusKind.Thinking));
+								if (status) {
+									yield status;
+								}
+								finalText = event.content;
+								sawMessage = true;
+								yield event;
 								break;
 							}
-							case StreamingEventType.ResponseReasoningSummaryTextDelta: {
+							case "thinking.delta": {
+								const status = emitStatus(buildStatus(AgentStatusKind.Thinking));
+								if (status) {
+									yield status;
+								}
 								reasoningSummaryBuffer += event.delta;
-								yield { type: "thinking.delta", delta: event.delta };
+								yield event;
 								break;
 							}
-							case StreamingEventType.ResponseReasoningSummaryTextDone: {
-								finalReasoningSummary = event.text;
+							case "thinking": {
+								const status = emitStatus(buildStatus(AgentStatusKind.Thinking));
+								if (status) {
+									yield status;
+								}
+								finalReasoningSummary = event.summary;
+								sawThinking = true;
+								yield event;
 								break;
 							}
-							case StreamingEventType.ResponseFunctionCallArgumentsDelta: {
-								const existing = toolArgBuffers.get(event.item_id) ?? "";
-								toolArgBuffers.set(event.item_id, existing + event.delta);
-								break;
-							}
-							case StreamingEventType.ResponseFunctionCallArgumentsDone: {
-								const args = event.arguments ?? toolArgBuffers.get(event.item_id) ?? "";
-								if (event.name) {
-									toolCalls.push({ id: event.item_id, name: event.name, args });
-									const status = emitStatus(buildStatus(AgentStatusKind.CallingTool, event.name));
-									if (status) {
-										yield status;
-									}
+							case "tool.start": {
+								toolCalls.push({ id: event.callId, name: event.name, args: event.args });
+								const status = emitStatus(buildStatus(AgentStatusKind.CallingTool, event.name));
+								if (status) {
+									yield status;
 								}
 								break;
 							}
-							case StreamingEventType.ResponseFailed: {
-								streamError = event.error ?? new Error("Response failed");
+							case "tool.end":
+							case "artifact": {
+								yield event;
 								break;
 							}
-							case StreamingEventType.Error: {
+							case "error": {
 								streamError = event.error;
-								break;
+								errorEmitted = true;
+								yield event;
+								const status = emitStatus(buildStatus(AgentStatusKind.Error));
+								if (status) {
+									yield status;
+								}
+								break streamLoop;
 							}
-							case StreamingEventType.ResponseCompleted: {
+							case "done":
 								break;
-							}
-							default: {
+							default:
 								console.error("unrecognized event", event);
 								break;
-							}
-
 						}
 					}
 				} catch (error) {
@@ -231,17 +247,21 @@ export function createAgent(options: AgentOptions): AgentRunner {
 				}
 
 				if (streamError) {
-					yield { type: "error", error: streamError };
-					const status = emitStatus(buildStatus(AgentStatusKind.Error));
-					if (status) {
-						yield status;
+					if (!errorEmitted) {
+						yield { type: "error", error: streamError };
+						const status = emitStatus(buildStatus(AgentStatusKind.Error));
+						if (status) {
+							yield status;
+						}
 					}
 					break;
 				}
 
-				const summaryText = finalReasoningSummary ?? reasoningSummaryBuffer;
-				if (summaryText) {
-					yield { type: "thinking", summary: summaryText };
+				if (!sawThinking) {
+					const summaryText = finalReasoningSummary ?? reasoningSummaryBuffer;
+					if (summaryText) {
+						yield { type: "thinking", summary: summaryText };
+					}
 				}
 
 				if (toolCalls.length > 0) {
@@ -259,7 +279,7 @@ export function createAgent(options: AgentOptions): AgentRunner {
 						if (status) {
 							yield status;
 						}
-						yield { type: "tool.start", name: call.name, args };
+						yield { type: "tool.start", name: call.name, args, callId: call.id };
 						try {
 							const result = await tool.run(args, baseContext);
 							yield { type: "tool.end", name: call.name, result };
@@ -283,7 +303,9 @@ export function createAgent(options: AgentOptions): AgentRunner {
 				const finalContent = finalText ?? textBuffer;
 				if (finalContent) {
 					messages.push({ role: "assistant", content: finalContent });
-					yield { type: "message", content: finalContent };
+					if (!sawMessage) {
+						yield { type: "message", content: finalContent };
+					}
 					const doneStatus = emitStatus(buildStatus(AgentStatusKind.Done));
 					if (doneStatus) {
 						yield doneStatus;
