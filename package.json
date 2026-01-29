@@ -32,6 +32,7 @@
   "author": "bavadim@gmail.com",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:static": "npm run build && vite build",
     "dev": "vite",
     "test": "npm run build && node --experimental-loader ./test/resolve-loader.mjs --test",
     "lint": "eslint .",

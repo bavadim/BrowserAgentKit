@@ -218,6 +218,14 @@ npm run dev
 
 Vite will open the demo and refresh on source changes.
 
+### GitHub Pages (static demo)
+
+```bash
+npm run build:static
+```
+
+The demo is built into `dist/` and deployed by GitHub Actions on pushes to `main`.
+
 ### URL presets
 
 You can prefill demo fields via query params:

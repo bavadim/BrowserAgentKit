@@ -7,6 +7,7 @@ const __dirname = path.dirname(__filename);
 
 export default defineConfig({
 	root: path.resolve(__dirname, "examples"),
+	base: "./",
 	server: {
 		port: 5173,
 		open: true,
@@ -15,7 +16,12 @@ export default defineConfig({
 		},
 	},
 	build: {
+		outDir: path.resolve(__dirname, "dist"),
+		emptyOutDir: false,
 		sourcemap: true,
+		rollupOptions: {
+			external: ["tiktoken"],
+		},
 	},
 	resolve: {
 		alias: {
