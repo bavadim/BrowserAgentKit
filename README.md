@@ -1,7 +1,14 @@
 # BrowserAgentKit
 
 BrowserAgentKit is a TypeScript library for running a **code agent in the browser**.
+
 Demo: https://bavadim.github.io/BrowserAgentKit/
+
+Highlights:
+- Browser-first agent loop (observe → plan → act)
+- **Skills**: prompt-based tools stored in the DOM (Codex skill markdown)
+- Built-in DOM/JS tools (XPath helpers, event binding, interpreter)
+- Streaming API (async generator)
 
 ## Install
 
@@ -90,17 +97,9 @@ for await (const ev of runAgent(
 The agent preserves conversation history across runs; create a fresh `createAgentMessages()` array to clear it (system prompt is kept).
 If `runAgent()` is called again with the same messages array, the previous run is aborted.
 
-## Features
+## Concepts
 
-- agent loop (observe → plan → act)
-- **skills** (prompt-based tools, Codex skill markdown in the DOM)
-- tools:
-  - JS interpreter
-  - DOM helpers inside the interpreter (XPath + subtree helpers)
-
-The agent API is an **async generator**: you send a text request and consume streamed events.
-
-## Skills
+### Skills
 
 A skill is a **tool** that runs the LLM with a Markdown prompt stored in the DOM.
 Store prompts in a script tag (or any DOM element) as **Codex skill markdown** (YAML frontmatter + body)
@@ -153,7 +152,7 @@ At the start of each root cycle, the agent injects a system message listing avai
 OpenAI tool names must match `^[a-zA-Z0-9_-]+$`, so skill/tool names are normalized for function calling
 (e.g., `canvas.render` → `canvas_render`). When the name changes, the system list shows the call name.
 
-## Tools
+### Tools
 
 A tool is an instance of the `Tool` class: name, description, action, and **input/output schemas**.
 Keep the description near the tool definition (in `src/tools.ts`).
@@ -248,11 +247,11 @@ Context compaction options (main cycle only):
 
 Typical event kinds:
 
-* `message` (agent text)
-* `thinking.delta` / `thinking` (reasoning summary text, when available)
-* `tool.start` / `tool.end`
-* `artifact`
-* `done`
+- `message` (agent text)
+- `thinking.delta` / `thinking` (reasoning summary text, when available)
+- `tool.start` / `tool.end`
+- `artifact`
+- `done`
 
 Consume it with:
 
@@ -266,6 +265,7 @@ for await (const ev of runAgent(agentMessages, generate, "...")) {
   }
   // update UI / state
 }
+```
 
 If you want status events, wrap the stream:
 
@@ -281,5 +281,4 @@ for await (const ev of withStatus(runAgent(agentMessages, generate, "..."))) {
     console.log(ev.right.status);
   }
 }
-```
 ```
