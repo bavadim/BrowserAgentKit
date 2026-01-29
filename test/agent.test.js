@@ -346,6 +346,28 @@ test("root cycle inserts callable list message", async () => {
 	assert.ok(!seenMessages[0].content.includes("Skills"));
 });
 
+test("prunes dangling tool calls from history", async () => {
+	let seenMessages = null;
+	const generate = (messages) => {
+		seenMessages = messages;
+		return streamFrom([{ type: "message", content: "ok" }]);
+	};
+
+	const messages = createAgentMessages();
+	messages.push({ role: "user", content: "hi" });
+	messages.push({
+		type: "function_call",
+		call_id: "dangling",
+		name: "jsRun",
+		arguments: "{\"code\":\"ok\",\"async\":false}",
+	});
+
+	await runAgentEvents(messages, generate, "next");
+
+	assert.ok(seenMessages);
+	assert.ok(!seenMessages.some((msg) => "type" in msg && msg.type === "function_call"));
+});
+
 test("model can ignore $skill hints", async () => {
 	const generate = () => streamFrom([{ type: "message", content: "ok" }]);
 	const messages = createAgentMessages();

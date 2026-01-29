@@ -34,6 +34,40 @@ const toError = (error: unknown): Error =>
 const right = (event: AgentEvent): AgentStreamEvent => E.right(event);
 const left = (error: Error): AgentStreamEvent => E.left(error);
 
+function pruneDanglingToolCalls(messages: Message[]): void {
+	const callIds = new Set<string>();
+	const outputIds = new Set<string>();
+	for (const message of messages) {
+		if ("type" in message) {
+			if (message.type === "function_call" && message.call_id) {
+				callIds.add(message.call_id);
+			}
+			if (message.type === "function_call_output" && message.call_id) {
+				outputIds.add(message.call_id);
+			}
+		}
+	}
+	const validIds = new Set<string>();
+	for (const callId of callIds) {
+		if (outputIds.has(callId)) {
+			validIds.add(callId);
+		}
+	}
+	if (validIds.size === callIds.size && validIds.size === outputIds.size) {
+		return;
+	}
+	const filtered = messages.filter((message) => {
+		if (!("type" in message)) {
+			return true;
+		}
+		if (message.type === "function_call" || message.type === "function_call_output") {
+			return !!message.call_id && validIds.has(message.call_id);
+		}
+		return true;
+	});
+	messages.splice(0, messages.length, ...filtered);
+}
+
 function formatCallables(title: string, callables: Callable[]): string {
 	if (callables.length === 0) {
 		return "";
@@ -138,6 +172,7 @@ export async function* runAgent(
 		window: context?.window ?? (hasWindow ? window : undefined),
 		signal: runSignal,
 	};
+	pruneDanglingToolCalls(messages);
 	messages.push({ role: "user", content: input });
 	let sawError = false;
 	const callableMap = new Map<string, Callable>();
