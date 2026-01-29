@@ -1,14 +1,7 @@
 import { pipe } from "fp-ts/lib/function.js";
 import * as E from "fp-ts/lib/Either.js";
 import * as O from "fp-ts/lib/Option.js";
-import type {
-	AgentEvent,
-	AgentStreamEvent,
-	AgentGenerate,
-	Message,
-	TokenCounter,
-	ToolDefinition,
-} from "./types";
+import type { AgentEvent, AgentStreamEvent, AgentGenerate, Message, TokenCounter, ToolDefinition } from "./types";
 
 const toError = (error: unknown): Error =>
 	error instanceof Error ? error : new Error(String(error));
@@ -40,34 +33,6 @@ export type AgentAdapter = {
 	contextWindowTokens?: number;
 };
 
-type TokenEncoding = {
-	encode: (text: string) => number[];
-};
-
-const encodingCache = new Map<string, Promise<TokenEncoding>>();
-
-async function getEncoding(model: string): Promise<TokenEncoding> {
-	if (encodingCache.has(model)) {
-		return encodingCache.get(model) as Promise<TokenEncoding>;
-	}
-	const loader = import("tiktoken").then((mod) => {
-		const api = mod as {
-			encoding_for_model?: (model: string) => TokenEncoding;
-			get_encoding?: (name: string) => TokenEncoding;
-		};
-		if (!api.encoding_for_model || !api.get_encoding) {
-			throw new Error("tiktoken API is missing encoding helpers.");
-		}
-		try {
-			return api.encoding_for_model(model);
-		} catch {
-			return api.get_encoding("cl100k_base");
-		}
-	});
-	encodingCache.set(model, loader);
-	return loader;
-}
-
 function estimateTokenCount(messages: Message[]): number {
 	const text = messages.map((message) => messageToText(message)).join("\n");
 	const length = text.length;
@@ -88,17 +53,8 @@ function messageToText(message: Message): string {
 }
 
 export async function countTokensForModel(messages: Message[], model: string): Promise<number> {
-	const isBrowser = typeof window !== "undefined" && typeof window.document !== "undefined";
-	if (isBrowser) {
-		return estimateTokenCount(messages);
-	}
-	try {
-		const encoding = await getEncoding(model);
-		const text = messages.map((message) => messageToText(message)).join("\n");
-		return encoding.encode(text).length;
-	} catch {
-		return estimateTokenCount(messages);
-	}
+	void model;
+	return estimateTokenCount(messages);
 }
 
 export function contextWindowForModel(model: string): number {
