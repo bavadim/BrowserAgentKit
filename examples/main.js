@@ -186,6 +186,73 @@ const agent = createAgent({
 			signal ? { signal } : undefined
 		);
 		const toolArgBuffers = new Map();
+		const contentParts = new Map();
+		const summaryParts = new Map();
+		let textBuffer = "";
+		let summaryBuffer = "";
+
+		const outputItemText = (item) => {
+			if (!item?.content || !Array.isArray(item.content)) {
+				return "";
+			}
+			return item.content
+				.map((part) => {
+					if (part.type === "output_text") {
+						return part.text ?? "";
+					}
+					if (part.type === "refusal") {
+						return part.refusal ?? "";
+					}
+					return "";
+				})
+				.join("");
+		};
+		const summaryFromItem = (item) => {
+			if (!item?.summary || !Array.isArray(item.summary)) {
+				return "";
+			}
+			return item.summary
+				.map((part) => (part.type === "summary_text" ? part.text ?? "" : ""))
+				.join("");
+		};
+		const updatePartBuffer = (buffer, itemId, index, text) => {
+			let parts = buffer.get(itemId);
+			if (!parts) {
+				parts = new Map();
+				buffer.set(itemId, parts);
+			}
+			parts.set(index, text ?? "");
+			return [...parts.entries()]
+				.sort((a, b) => a[0] - b[0])
+				.map(([, value]) => value)
+				.join("");
+		};
+		const nextTextDelta = (nextText) => {
+			if (!nextText) {
+				return "";
+			}
+			let delta = "";
+			if (nextText.startsWith(textBuffer)) {
+				delta = nextText.slice(textBuffer.length);
+			} else {
+				delta = nextText;
+			}
+			textBuffer = nextText;
+			return delta;
+		};
+		const nextSummaryDelta = (nextText) => {
+			if (!nextText) {
+				return "";
+			}
+			let delta = "";
+			if (nextText.startsWith(summaryBuffer)) {
+				delta = nextText.slice(summaryBuffer.length);
+			} else {
+				delta = nextText;
+			}
+			summaryBuffer = nextText;
+			return delta;
+		};
 		for await (const event of stream) {
 			switch (event.type) {
 				case "response.queued":
@@ -194,17 +261,89 @@ const agent = createAgent({
 					yield { type: "status", status: { kind: "thinking" } };
 					break;
 				case "response.output_text.delta":
-					yield { type: "message.delta", delta: event.delta };
+					textBuffer += event.delta ?? "";
+					if (event.delta) {
+						yield { type: "message.delta", delta: event.delta };
+					}
 					break;
-				case "response.output_text.done":
-					yield { type: "message", content: event.text };
+				case "response.output_text.done": {
+					const delta = nextTextDelta(event.text ?? "");
+					if (delta) {
+						yield { type: "message.delta", delta };
+					}
 					break;
+				}
 				case "response.reasoning_summary_text.delta":
-					yield { type: "thinking.delta", delta: event.delta };
+					summaryBuffer += event.delta ?? "";
+					if (event.delta) {
+						yield { type: "thinking.delta", delta: event.delta };
+					}
 					break;
-				case "response.reasoning_summary_text.done":
-					yield { type: "thinking", summary: event.text };
+				case "response.reasoning_summary_text.done": {
+					const delta = nextSummaryDelta(event.text ?? "");
+					if (delta) {
+						yield { type: "thinking.delta", delta };
+					}
 					break;
+				}
+				case "response.reasoning_text.delta":
+				case "response.reasoning_text.done":
+					break;
+				case "response.reasoning_summary_part.added":
+				case "response.reasoning_summary_part.done": {
+					const combined = updatePartBuffer(
+						summaryParts,
+						event.item_id,
+						event.summary_index,
+						event.part?.text ?? ""
+					);
+					const delta = nextSummaryDelta(combined);
+					if (delta) {
+						yield { type: "thinking.delta", delta };
+					}
+					break;
+				}
+				case "response.content_part.added":
+				case "response.content_part.done": {
+					if (event.part?.type === "output_text") {
+						const combined = updatePartBuffer(
+							contentParts,
+							event.item_id,
+							event.content_index,
+							event.part.text ?? ""
+						);
+						const delta = nextTextDelta(combined);
+						if (delta) {
+							yield { type: "message.delta", delta };
+						}
+					}
+					if (event.part?.type === "refusal") {
+						const combined = updatePartBuffer(
+							contentParts,
+							event.item_id,
+							event.content_index,
+							event.part.refusal ?? ""
+						);
+						const delta = nextTextDelta(combined);
+						if (delta) {
+							yield { type: "message.delta", delta };
+						}
+					}
+					break;
+				}
+				case "response.refusal.delta":
+					textBuffer += event.delta ?? "";
+					if (event.delta) {
+						yield { type: "message.delta", delta: event.delta };
+					}
+					break;
+				case "response.refusal.done": {
+					const delta = nextTextDelta(event.refusal ?? "");
+					if (delta) {
+						yield { type: "message.delta", delta };
+					}
+					break;
+				}
 				case "response.function_call_arguments.delta": {
 					const existing = toolArgBuffers.get(event.item_id) ?? "";
 					toolArgBuffers.set(event.item_id, existing + event.delta);
@@ -223,11 +362,34 @@ const agent = createAgent({
 				case "error":
 					yield { type: "error", error: event.error };
 					break;
+				case "response.audio.delta":
+				case "response.audio.done":
 				case "response.completed":
 					break;
 				case "response.output_item.added":
-				case "response.output_item.done":
+				case "response.output_item.done": {
+					if (event.item?.type === "message") {
+						const delta = nextTextDelta(outputItemText(event.item));
+						if (delta) {
+							yield { type: "message.delta", delta };
+						}
+					}
+					if (event.item?.type === "reasoning") {
+						const delta = nextSummaryDelta(summaryFromItem(event.item));
+						if (delta) {
+							yield { type: "thinking.delta", delta };
+						}
+					}
+					if (event.item?.type === "function_call") {
+						yield {
+							type: "tool.start",
+							name: event.item.name,
+							args: event.item.arguments ?? "",
+							callId: event.item.call_id,
+						};
+					}
 					break;
+				}
 				default:
 					console.error("unrecognized event", event);
 					break;
