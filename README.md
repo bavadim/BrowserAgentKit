@@ -1,15 +1,7 @@
 # BrowserAgentKit
 
 BrowserAgentKit is a TypeScript library for running a **code agent in the browser**.
-
-Implemented:
-- agent loop (observe → plan → act)
-- **skills** (prompt-based tools, Codex skill markdown in the DOM)
-- tools:
-  - JS interpreter
-  - DOM helpers inside the interpreter (XPath + subtree helpers)
-
-The agent API is an **async generator**: you send a text request and consume streamed events.
+Demo: https://bavadim.github.io/BrowserAgentKit/
 
 ## Install
 
@@ -97,6 +89,16 @@ for await (const ev of runAgent(
 `adapter.generate(messages, tools, signal)` must return (or resolve to) an `AsyncIterable` of `Either<Error, AgentEvent>` objects. When using the OpenAI Responses stream, you can reuse `createOpenAIResponsesAdapter` from the library (see above or `examples/main.js`).
 The agent preserves conversation history across runs; create a fresh `createAgentMessages()` array to clear it (system prompt is kept).
 If `runAgent()` is called again with the same messages array, the previous run is aborted.
+
+## Features
+
+- agent loop (observe → plan → act)
+- **skills** (prompt-based tools, Codex skill markdown in the DOM)
+- tools:
+  - JS interpreter
+  - DOM helpers inside the interpreter (XPath + subtree helpers)
+
+The agent API is an **async generator**: you send a text request and consume streamed events.
 
 ## Skills
 

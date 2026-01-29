@@ -127,9 +127,9 @@ function statusLabel(status) {
 		case "thinking":
 			return thinkingSummary ? `Thinking: ${thinkingSummary}` : "Thinking...";
 		case "calling_tool":
-			return status.toolName ? `Вызываю ${status.toolName}...` : "Вызываю инструмент...";
+			return status.toolName ? `Calling ${status.toolName}...` : "Calling a tool...";
 		case "tool_result":
-			return status.toolName ? `Получен ответ от ${status.toolName}.` : "Получен ответ от инструмента.";
+			return status.toolName ? `Received result from ${status.toolName}.` : "Received tool result.";
 		default:
 			return "";
 	}
