@@ -5,6 +5,7 @@ import type {
 	AgentGenerate,
 	AgentStreamEvent,
 	Message,
+	RunAgentOptions,
 	Skill,
 	SkillCallArgs,
 	Tool,
@@ -13,7 +14,7 @@ import type {
 	ToolEnd,
 	ToolStart,
 } from "./types";
-import { buildSkillMessages, buildSkillPrompt, resolveSkillPrompt } from "./skill";
+import { buildSkillPrompt, resolveSkillPrompt } from "./skill";
 import { addToolOutput } from "./loop";
 
 export type CallTarget =
@@ -22,16 +23,16 @@ export type CallTarget =
 
 export type StreamOutcome = "continue" | "stop" | "error";
 
-export type RunAgentInternal = (
+export type RunAgent = (
 	messages: Message[],
-	signal: AbortSignal | undefined,
-	ctx: ToolContext,
-	tools: Tool[],
-	skills: Skill[],
-	skillDepth: number,
-	skillListMessage: Message | null,
-	maxSteps: number,
-	generate: AgentGenerate
+	generate: AgentGenerate,
+	input: string,
+	tools?: Tool[],
+	skills?: Skill[],
+	maxSteps?: number,
+	context?: Partial<ToolContext>,
+	signal?: AbortSignal,
+	options?: RunAgentOptions
 ) => AsyncIterable<AgentStreamEvent>;
 
 const toError = (error: unknown): Error =>
@@ -58,21 +59,17 @@ const toolEndEvent = (call: ToolCall, result: unknown, target: CallTarget): Tool
 		? { type: "tool.end", name: call.name, result, isSkill: true, depth: target.depth }
 		: { type: "tool.end", name: call.name, result };
 
-const failSkill = async function* (
-	error: Error
-): AsyncGenerator<AgentStreamEvent, E.Either<Error, string>, void> {
-	return E.left(error);
-};
+type SkillRunResult = { output: string; events: AgentEvent[] };
 
-export const runSkill = async function* (
+export async function runSkill(
 	target: Extract<CallTarget, { kind: "skill" }>,
 	ctx: ToolContext,
 	signal: AbortSignal | undefined,
 	maxSteps: number,
 	generate: AgentGenerate,
-	runAgentInternal: RunAgentInternal,
+	runAgent: RunAgent,
 	basePrompt: string
-): AsyncGenerator<AgentStreamEvent, E.Either<Error, string>, void> {
+): Promise<E.Either<Error, SkillRunResult>> {
 	const childSkills = target.skill.allowedSkills ?? [];
 	const childTools = target.skill.tools ?? [];
 	const skillPromptResult = pipe(
@@ -80,57 +77,51 @@ export const runSkill = async function* (
 		E.chain((prompt) => buildSkillPrompt(prompt, childSkills))
 	);
 
-	return yield* pipe(
+	return pipe(
 		skillPromptResult,
-		E.matchW(
-			failSkill,
-			async function* (skillPrompt) {
-				const nestedMessages = buildSkillMessages(
-					basePrompt,
-					skillPrompt,
-					target.input,
-					target.input.history ?? []
-				);
-				let skillText = "";
-				for await (const ev of runAgentInternal(
-					nestedMessages,
-					signal,
-					ctx,
-					childTools,
-					childSkills,
-					target.depth,
-					null,
-					maxSteps,
-					generate
-				)) {
-					const outcome = pipe(
-						ev,
-						E.match<Error, AgentEvent, { kind: "error"; error: Error } | { kind: "event"; event: AgentEvent }>(
-							(error) => ({ kind: "error", error }),
-							(event) => ({ kind: "event", event })
-						)
-					);
-					if (outcome.kind === "error") {
-						return E.left(outcome.error);
-					}
-					const event = outcome.event;
-					if (event.type === "message") {
-						skillText = event.content;
-						continue;
-					}
-					if (
-						(event.type === "tool.start" || event.type === "tool.end") &&
-						"isSkill" in event &&
-						event.isSkill
-					) {
-						yield right(event);
-					}
+		E.matchW(async (error) => E.left(error), async (skillPrompt) => {
+			const nestedMessages: Message[] = [
+				{ role: "system", content: basePrompt },
+				{ role: "system", content: skillPrompt },
+				...(target.input.history ?? []),
+			];
+			const skillEvents: AgentEvent[] = [];
+			let skillText = "";
+			for await (const ev of runAgent(
+				nestedMessages,
+				generate,
+				target.input.task,
+				childTools,
+				childSkills,
+				maxSteps,
+				ctx,
+				signal,
+				{
+					skillDepth: target.depth,
+					skillListMessage: null,
+					skipActiveRuns: true,
 				}
-				return E.right(skillText);
+			)) {
+				if (E.isLeft(ev)) {
+					return E.left(ev.left);
+				}
+				const event = ev.right;
+				if (event.type === "message") {
+					skillText = event.content;
+					continue;
+				}
+				if (
+					(event.type === "tool.start" || event.type === "tool.end") &&
+					"isSkill" in event &&
+					event.isSkill
+				) {
+					skillEvents.push(event);
+				}
 			}
-		)
+			return E.right({ output: skillText, events: skillEvents });
+		})
 	);
-};
+}
 
 export async function* runToolCall(
 	call: ToolCall,
@@ -140,17 +131,28 @@ export async function* runToolCall(
 	signal: AbortSignal | undefined,
 	maxSteps: number,
 	generate: AgentGenerate,
-	runAgentInternal: RunAgentInternal,
+	runAgent: RunAgent,
 	basePrompt: string,
 	loopMessages: Message[]
 ): AsyncGenerator<AgentStreamEvent, StreamOutcome, void> {
 	yield right(toolStartEvent(call, args, target));
-	const result = target.kind === "skill"
-		? yield* runSkill(target, ctx, signal, maxSteps, generate, runAgentInternal, basePrompt)
-		: await Promise.resolve()
-			.then(() => target.tool.run(args, ctx))
-			.then(E.right)
-			.catch((error) => E.left(toError(error)));
+	if (target.kind === "skill") {
+		const result = await runSkill(target, ctx, signal, maxSteps, generate, runAgent, basePrompt);
+		if (E.isLeft(result)) {
+			yield left(result.left);
+			return "error";
+		}
+		for (const event of result.right.events) {
+			yield right(event);
+		}
+		yield right(toolEndEvent(call, result.right.output, target));
+		addToolOutput(loopMessages, call.id ?? "tool-call", result.right.output ?? null);
+		return "continue";
+	}
+	const result = await Promise.resolve()
+		.then(() => target.tool.run(args, ctx))
+		.then(E.right)
+		.catch((error) => E.left(toError(error)));
 	if (E.isLeft(result)) {
 		yield left(result.left);
 		return "error";

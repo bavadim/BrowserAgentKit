@@ -51,6 +51,12 @@ export type SkillCallArgs = {
 	history?: EasyInputMessage[];
 };
 
+export type RunAgentOptions = {
+	skillDepth?: number;
+	skillListMessage?: Message | null;
+	skipActiveRuns?: boolean;
+};
+
 export enum AgentStatusKind {
 	Thinking = "thinking",
 	CallingTool = "calling_tool",
