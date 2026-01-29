@@ -457,7 +457,7 @@ runBtn.addEventListener("click", async () => {
 				if (ev.error && typeof ev.error === "object" && "stack" in ev.error && ev.error.stack) {
 					console.error(ev.error.stack);
 				}
-				addMessage("assistant", `Error: ${String(ev.error)}`);
+				addMessage("assistant", `${String(ev.error)}`);
 			}
 		}
 	} catch (error) {
@@ -466,7 +466,7 @@ runBtn.addEventListener("click", async () => {
 		} else {
 			console.error(new Error(String(error)));
 		}
-		addMessage("assistant", `Error: ${String(error)}`);
+		addMessage("assistant", `${String(error)}`);
 	} finally {
 		runBtn.disabled = false;
 	}
