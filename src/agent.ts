@@ -12,9 +12,16 @@ import type {
 	ToolContext,
 } from "./types";
 import { formatSkills, parseSkillCallArgs, toOpenAITools, withSystemAfter } from "./skill";
-import { addToolCall, applyStreamEvent, finalContent, flushThinking, initLoopState } from "./loop";
-import type { CallTarget, StreamOutcome } from "./execute";
-import { runToolCall } from "./execute";
+import {
+	addToolCall,
+	applyStreamEvent,
+	finalContent,
+	flushThinking,
+	initLoopState,
+	runToolCall,
+	type CallTarget,
+	type StreamOutcome,
+} from "./execute";
 
 const BASE_SYSTEM_PROMPT = "You are a browser-based code agent. Use tools when helpful and respond succinctly.";
 const toError = (error: unknown): Error =>
