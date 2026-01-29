@@ -34,6 +34,34 @@ const toError = (error: unknown): Error =>
 const right = (event: AgentEvent): AgentStreamEvent => E.right(event);
 const left = (error: Error): AgentStreamEvent => E.left(error);
 
+const NO_TOOL_RETRY_PROMPT =
+	"The last response did not call any tools. If the request needs DOM/JS changes, " +
+	"call an appropriate tool or skill to apply them. Do not claim changes without a tool call.";
+const DOM_INTENT_PATTERN =
+	/(draw|render|create|add|insert|build|make|update|change|move|remove|delete|button|hero|section|canvas|html|dom|style|layout|header|footer|card|grid|list|table|form|modal|popup|banner|navbar|кнопк|нарис|добав|сдела|измен|перемест|удал|баннер|секц|хедер|футер|канвас|макет|верстк|форма|таблиц)/i;
+
+function shouldRetryNoToolCall(
+	input: string,
+	content: string,
+	callables: Callable[],
+	alreadyRetried: boolean,
+	toolCalls: ToolCall[]
+): boolean {
+	if (alreadyRetried) {
+		return false;
+	}
+	if (!content) {
+		return false;
+	}
+	if (toolCalls.length > 0) {
+		return false;
+	}
+	if (callables.length === 0) {
+		return false;
+	}
+	return DOM_INTENT_PATTERN.test(input);
+}
+
 function pruneDanglingToolCalls(messages: Message[]): void {
 	const callIds = new Set<string>();
 	const outputIds = new Set<string>();
@@ -209,6 +237,7 @@ export async function* runAgent(
 
 	try {
 		let step = 0;
+		let retriedNoToolCall = false;
 		while (step < maxSteps) {
 			if (runSignal?.aborted) {
 				break;
@@ -298,6 +327,11 @@ export async function* runAgent(
 			}
 
 			const content = finalContent(stepState);
+			if (shouldRetryNoToolCall(input, content, callables, retriedNoToolCall, stepState.toolCalls)) {
+				messages.push({ role: "system", content: NO_TOOL_RETRY_PROMPT });
+				retriedNoToolCall = true;
+				continue;
+			}
 			if (content) {
 				messages.push({ role: "assistant", content });
 				if (!stepState.sawMessage) {

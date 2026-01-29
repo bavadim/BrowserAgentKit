@@ -368,6 +368,36 @@ test("prunes dangling tool calls from history", async () => {
 	assert.ok(!seenMessages.some((msg) => "type" in msg && msg.type === "function_call"));
 });
 
+test("retries when DOM intent has no tool calls", async () => {
+	let calls = 0;
+	let secondMessages = null;
+	const generate = (messages) => {
+		calls += 1;
+		if (calls === 1) {
+			return streamFrom([{ type: "message", content: "Done." }]);
+		}
+		secondMessages = messages;
+		return streamFrom([{ type: "message", content: "ok" }]);
+	};
+
+	const tool = new Tool(
+		"domTool",
+		"Dom tool.",
+		() => "ok",
+		{ type: "object", additionalProperties: false },
+		{ type: "string", description: "OK result." }
+	);
+
+	const messages = createAgentMessages();
+	const events = await runAgentEvents(messages, generate, "add a button", [tool], 2);
+	const rights = rightEvents(events);
+
+	assert.equal(calls, 2);
+	assert.ok(secondMessages?.some((msg) => msg.role === "system" && msg.content.includes("did not call any tools")));
+	assert.ok(rights.some((ev) => ev.type === "message" && ev.content === "ok"));
+	assert.ok(!messages.some((msg) => msg.role === "assistant" && msg.content === "Done."));
+});
+
 test("model can ignore $skill hints", async () => {
 	const generate = () => streamFrom([{ type: "message", content: "ok" }]);
 	const messages = createAgentMessages();
