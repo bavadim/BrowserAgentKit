@@ -105,7 +105,7 @@ export class Skill {
 								content: { type: "string" },
 							},
 							required: ["role", "content"],
-							additionalProperties: true,
+							additionalProperties: false,
 						},
 					},
 				},
