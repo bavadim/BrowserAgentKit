@@ -21,13 +21,11 @@ export type OpenAIResponsesClient = {
 export type OpenAIResponsesAdapterOptions = {
 	client?: OpenAIResponsesClient;
 	getClient?: () => OpenAIResponsesClient;
-	clientOptions?: OpenAIClientOptions;
-	getClientOptions?: () => OpenAIClientOptions;
 	model: string;
 	toolChoice?: "auto" | "none" | "required";
 	responseOptions?: Record<string, unknown>;
 	contextWindowTokens?: number;
-};
+} & OpenAIClientOptions;
 
 export type OpenAIClientOptions = ConstructorParameters<typeof OpenAI>[0];
 
@@ -180,29 +178,32 @@ function nextDelta(nextText: string, bufferRef: { value: string }): string {
 }
 
 export function createOpenAIResponsesAdapter(options: OpenAIResponsesAdapterOptions): AgentAdapter {
-	const toolChoice = options.toolChoice;
+	const {
+		client,
+		getClient,
+		model,
+		toolChoice,
+		responseOptions,
+		contextWindowTokens,
+		...clientOptions
+	} = options;
 	let cachedClient: OpenAIResponsesClient | null = null;
 	let cachedClientKey: string | null = null;
 	const resolveClient = (): OpenAIResponsesClient => {
-		if (options.getClient) {
-			return options.getClient();
+		if (getClient) {
+			return getClient();
 		}
-		if (options.client) {
-			return options.client;
-		}
-		const getOptions = options.getClientOptions ?? (() => options.clientOptions);
-		const clientOptions = getOptions?.();
-		if (!clientOptions) {
-			throw new Error("OpenAI client options are required for the responses adapter.");
+		if (client) {
+			return client;
 		}
 		const key = JSON.stringify(clientOptions);
 		if (cachedClient && cachedClientKey === key) {
 			return cachedClient;
 		}
-		const client = new OpenAI(clientOptions) as OpenAIResponsesClient;
-		cachedClient = client;
+		const nextClient = new OpenAI(clientOptions) as OpenAIResponsesClient;
+		cachedClient = nextClient;
 		cachedClientKey = key;
-		return client;
+		return nextClient;
 	};
 	const generate: AgentGenerate = async function* (
 		messages: Message[],
@@ -213,12 +214,12 @@ export function createOpenAIResponsesAdapter(options: OpenAIResponsesAdapterOpti
 		const client = resolveClient();
 		const stream = await client.responses.create(
 			{
-				model: options.model,
+				model,
 				input: messages,
 				tools,
 				tool_choice: toolChoice ?? (tools?.length ? "auto" : undefined),
 				stream: true,
-				...(options.responseOptions ?? {}),
+				...(responseOptions ?? {}),
 			},
 			signal ? { signal } : undefined
 		);
@@ -414,13 +415,13 @@ export function createOpenAIResponsesAdapter(options: OpenAIResponsesAdapterOpti
 			}
 		}
 	};
-	const contextWindowTokens = options.contextWindowTokens ?? contextWindowForModel(options.model);
-	const countTokens: TokenCounter = (messages, model) =>
-		countTokensForModel(messages, model ?? options.model);
+	const windowTokens = contextWindowTokens ?? contextWindowForModel(model);
+	const countTokens: TokenCounter = (messages, selectedModel) =>
+		countTokensForModel(messages, selectedModel ?? model);
 	return {
-		model: options.model,
+		model,
 		generate,
 		countTokens,
-		contextWindowTokens,
+		contextWindowTokens: windowTokens,
 	};
 }

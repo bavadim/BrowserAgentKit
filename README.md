@@ -50,11 +50,9 @@ const skills = [Skill.fromDomSelector("//script[@id='skill-canvas-render']", doc
 
 const adapter = createOpenAIResponsesAdapter({
   model: "gpt-4.1-mini",
-  clientOptions: {
-    baseURL: "/api/llm", // your backend proxy
-    apiKey: "sk-...", // DANGEROUS! DO NOT PASS YOUR OWN KEY
-    dangerouslyAllowBrowser: true,
-  },
+  baseURL: "/api/llm", // your backend proxy
+  apiKey: "sk-...", // DANGEROUS! DO NOT PASS YOUR OWN KEY
+  dangerouslyAllowBrowser: true,
 });
 
 // Adapter shape:

@@ -174,7 +174,7 @@ function appendThinkingDelta(delta) {
 
 const skills = [Skill.fromDomSelector("//script[@id='skill-canvas-render']", document)];
 
-let lastAdapter = { model: "", adapter: null };
+let lastAdapter = { key: "", adapter: null };
 
 function getSelectedModel() {
 	const value = modelSelect?.value?.trim();
@@ -183,20 +183,17 @@ function getSelectedModel() {
 
 function getAdapter() {
 	const model = getSelectedModel();
-	if (!lastAdapter.adapter || lastAdapter.model !== model) {
+	const baseURL = baseUrlInput?.value.trim() ?? "";
+	const apiKey = apiKeyInput?.value.trim() ?? "";
+	const key = `${model}|${baseURL}|${apiKey}`;
+	if (!lastAdapter.adapter || lastAdapter.key !== key) {
 		lastAdapter = {
-			model,
+			key,
 			adapter: createOpenAIResponsesAdapter({
-				getClientOptions: () => {
-					const baseUrl = baseUrlInput?.value.trim() ?? "";
-					const apiKey = apiKeyInput?.value.trim() ?? "";
-					return {
-						baseURL: baseUrl,
-						apiKey: apiKey || undefined,
-						dangerouslyAllowBrowser: true,
-					};
-				},
 				model,
+				baseURL,
+				apiKey: apiKey || undefined,
+				dangerouslyAllowBrowser: true,
 			}),
 		};
 	}
