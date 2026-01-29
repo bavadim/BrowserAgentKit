@@ -14,7 +14,7 @@ import type {
 	ToolStart,
 } from "./types";
 import type { Skill } from "./skill";
-import type { Tool } from "./tool";
+import type { Tool } from "./tools";
 
 export type CallTarget =
 	| { kind: "tool"; tool: Tool }
