@@ -261,7 +261,7 @@ Vite will open the demo and refresh on source changes.
 npm run build:static
 ```
 
-The demo is built into `dist/` and deployed by GitHub Actions on pushes to `main`.
+The demo is built into `examples/dist/` and deployed by GitHub Actions on pushes to `main`.
 
 ### URL presets
 

@@ -133,6 +133,31 @@
         color: #92400e;
         font-style: italic;
       }
+      .skill-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .skill-list-items {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 8px;
+        border-radius: 10px;
+        border: 1px dashed #e5e7eb;
+        background: #f9fafb;
+      }
+      .skill-list-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.95rem;
+        color: #374151;
+      }
+      .skill-list-item input {
+        width: auto;
+        margin: 0;
+      }
       @media (max-width: 900px) {
         .app {
           grid-template-columns: 1fr;
@@ -170,6 +195,11 @@
           <label for="apiKey">API key (optional)</label>
           <input id="apiKey" placeholder="sk-... (avoid personal keys)" />
         </details>
+
+        <div class="skill-list">
+          <label>Enabled skills</label>
+          <div id="skillList" class="skill-list-items"></div>
+        </div>
 
         <div id="chatLog" class="chat-log"></div>
 

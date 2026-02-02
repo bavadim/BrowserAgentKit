@@ -17,6 +17,7 @@ import { createChatUi } from "browseragentkit/ui";
 
 const runBtn = document.getElementById("runBtn");
 const chatLog = document.getElementById("chatLog");
+const skillList = document.getElementById("skillList");
 const canvas = document.getElementById("canvas");
 const baseUrlInput = document.getElementById("baseUrl");
 const modelSelect = document.getElementById("modelSelect");
@@ -57,6 +58,45 @@ function addAssistantMessage(text) {
 }
 
 const skills = [Skill.fromDomSelector("//script[@id='skill-canvas-render']", document)];
+const enabledSkills = new Set(skills.map((skill) => skill.name));
+
+function renderSkillList() {
+	if (!skillList) {
+		return;
+	}
+	skillList.innerHTML = "";
+	if (skills.length === 0) {
+		const empty = document.createElement("div");
+		empty.className = "skill-list-item";
+		empty.textContent = "No skills available.";
+		skillList.appendChild(empty);
+		return;
+	}
+	for (const skill of skills) {
+		const row = document.createElement("label");
+		row.className = "skill-list-item";
+
+		const checkbox = document.createElement("input");
+		checkbox.type = "checkbox";
+		checkbox.checked = enabledSkills.has(skill.name);
+		checkbox.addEventListener("change", () => {
+			if (checkbox.checked) {
+				enabledSkills.add(skill.name);
+			} else {
+				enabledSkills.delete(skill.name);
+			}
+		});
+
+		const text = document.createElement("span");
+		text.textContent = skill.name;
+
+		row.appendChild(checkbox);
+		row.appendChild(text);
+		skillList.appendChild(row);
+	}
+}
+
+renderSkillList();
 
 let lastAdapter = { key: "", adapter: null };
 
@@ -94,7 +134,9 @@ const tools = [
 	domRemoveTool(),
 	domBindEventTool(),
 ];
-const callables = [...tools, ...skills];
+function getEnabledSkills() {
+	return skills.filter((skill) => enabledSkills.has(skill.name));
+}
 const agentContext = { viewRoot: canvas };
 
 runBtn.addEventListener("click", async () => {
@@ -120,7 +162,7 @@ runBtn.addEventListener("click", async () => {
 			agentMessages,
 			adapter.generate,
 			prompt,
-			callables,
+			[...tools, ...getEnabledSkills()],
 			25,
 			agentContext,
 			undefined,
