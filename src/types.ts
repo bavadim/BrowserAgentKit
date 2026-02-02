@@ -155,3 +155,25 @@ export type ChatUiController = {
 };
 
 export type SkillModuleMap = Record<string, string>;
+
+export type McpTool = {
+	name: string;
+	description?: string;
+	inputSchema?: JsonSchema;
+	outputSchema?: JsonSchema;
+};
+
+export type McpToolResult = {
+	content: unknown;
+	metadata?: unknown;
+};
+
+export type McpHttpClientOptions = {
+	baseUrl: string;
+	bearerToken?: string;
+};
+
+export type McpClient = {
+	listTools: () => Promise<McpTool[]>;
+	callTool: (name: string, args: unknown) => Promise<McpToolResult>;
+};

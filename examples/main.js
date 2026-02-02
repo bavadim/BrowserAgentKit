@@ -18,6 +18,7 @@ import { createChatUi } from "browseragentkit/ui";
 const runBtn = document.getElementById("runBtn");
 const chatLog = document.getElementById("chatLog");
 const skillList = document.getElementById("skillList");
+const toolList = document.getElementById("toolList");
 const canvas = document.getElementById("canvas");
 const baseUrlInput = document.getElementById("baseUrl");
 const modelSelect = document.getElementById("modelSelect");
@@ -134,8 +135,51 @@ const tools = [
 	domRemoveTool(),
 	domBindEventTool(),
 ];
+const enabledTools = new Set(tools.map((tool) => tool.name));
+
+function renderToolList() {
+	if (!toolList) {
+		return;
+	}
+	toolList.innerHTML = "";
+	if (tools.length === 0) {
+		const empty = document.createElement("div");
+		empty.className = "skill-list-item";
+		empty.textContent = "No tools available.";
+		toolList.appendChild(empty);
+		return;
+	}
+	for (const tool of tools) {
+		const row = document.createElement("label");
+		row.className = "skill-list-item";
+
+		const checkbox = document.createElement("input");
+		checkbox.type = "checkbox";
+		checkbox.checked = enabledTools.has(tool.name);
+		checkbox.addEventListener("change", () => {
+			if (checkbox.checked) {
+				enabledTools.add(tool.name);
+			} else {
+				enabledTools.delete(tool.name);
+			}
+		});
+
+		const text = document.createElement("span");
+		text.textContent = tool.name;
+
+		row.appendChild(checkbox);
+		row.appendChild(text);
+		toolList.appendChild(row);
+	}
+}
+
+renderToolList();
 function getEnabledSkills() {
 	return skills.filter((skill) => enabledSkills.has(skill.name));
+}
+
+function getEnabledTools() {
+	return tools.filter((tool) => enabledTools.has(tool.name));
 }
 const agentContext = { viewRoot: canvas };
 
@@ -162,7 +206,7 @@ runBtn.addEventListener("click", async () => {
 			agentMessages,
 			adapter.generate,
 			prompt,
-			[...tools, ...getEnabledSkills()],
+			[...getEnabledTools(), ...getEnabledSkills()],
 			25,
 			agentContext,
 			undefined,

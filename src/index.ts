@@ -4,3 +4,4 @@ export * from "./adapters";
 export * from "./skill";
 export * from "./tools";
 export * from "./skills-static";
+export * from "./mcp";

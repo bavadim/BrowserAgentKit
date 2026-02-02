@@ -8,6 +8,9 @@ Highlights:
 - Browser-first agent loop (observe → plan → act)
 - **Skills**: prompt-based tools stored in the DOM (Codex skill markdown)
 - Built-in DOM/JS tools (XPath helpers, event binding, interpreter)
+- Optional chat UI subpath (`browseragentkit/ui`)
+- Static skill loader with Vite plugin (DOM-backed resources)
+- Minimal MCP HTTP tools adapter
 - Streaming API (async generator)
 
 ## Install
@@ -132,6 +135,22 @@ const skill = Skill.fromDomSelector("//script[@data-skill='canvas.render' and @d
 The plugin injects `script[type="text/plain"]` nodes under `#bak-skills-root` with:
 `data-skill`, `data-kind` (`prompt | reference | script`), and `data-path`.
 
+## MCP tools (HTTP)
+
+```ts
+import { createMcpHttpClient, mcpTools } from "browseragentkit";
+
+const mcpClient = createMcpHttpClient({
+  baseUrl: "https://mcp.example.com",
+  bearerToken: "token",
+});
+
+const callables = [
+  ...mcpTools(mcpClient),
+  // ...your other tools/skills
+];
+```
+
 ## Concepts
 
 ### Skills
@@ -254,6 +273,7 @@ npm run dev
 ```
 
 Vite will open the demo and refresh on source changes.
+The demo includes skill and tool toggles above the chat input.
 
 ### GitHub Pages (static demo)
 
