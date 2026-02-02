@@ -37,3 +37,6 @@ yarn-error.log*
 next-env.d.ts
 
 package-lock.json
+
+# Demo build output
+examples/dist/
