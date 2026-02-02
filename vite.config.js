@@ -21,9 +21,9 @@ export default defineConfig({
 		sourcemap: true,
 	},
 	resolve: {
-		alias: {
-			browseragentkit: path.resolve(__dirname, "src/index.ts"),
-			"browseragentkit/ui": path.resolve(__dirname, "src/ui/index.ts"),
-		},
+		alias: [
+			{ find: "browseragentkit/ui", replacement: path.resolve(__dirname, "src/ui/index.ts") },
+			{ find: "browseragentkit", replacement: path.resolve(__dirname, "src/index.ts") },
+		],
 	},
 });
