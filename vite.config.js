@@ -23,6 +23,7 @@ export default defineConfig({
 	resolve: {
 		alias: {
 			browseragentkit: path.resolve(__dirname, "src/index.ts"),
+			"browseragentkit/ui": path.resolve(__dirname, "src/ui/index.ts"),
 		},
 	},
 });
