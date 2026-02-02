@@ -295,6 +295,7 @@ You can prefill demo fields via query params:
 
 `runAgent(messages, generate, input, callables?, maxSteps?, context?, signal?, options?)` returns an async generator of `Either<Error, AgentEvent>`.
 If you don’t need persistent history, pass `undefined` for `messages` and the agent will create a fresh system prompt for the run.
+To append custom app-wide instructions (like `AGENTS.md`), pass a string to `createAgentMessages(agentsMd)`.
 
 Context compaction options (main cycle only):
 - `tokenCounter`: function to count tokens for the current model.

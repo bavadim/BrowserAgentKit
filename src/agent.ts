@@ -227,8 +227,10 @@ function normalizeToolArgs(args: unknown): unknown {
 
 const activeRuns = new WeakMap<Message[], AbortController>();
 
-export function createAgentMessages(): Message[] {
-	return [{ role: "system", content: BASE_SYSTEM_PROMPT }];
+export function createAgentMessages(agentsMd?: string): Message[] {
+	const extra = agentsMd?.trim();
+	const content = extra ? `${BASE_SYSTEM_PROMPT}\n\n${extra}` : BASE_SYSTEM_PROMPT;
+	return [{ role: "system", content }];
 }
 
 export async function* runAgent(

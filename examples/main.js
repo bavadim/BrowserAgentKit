@@ -125,7 +125,9 @@ function getAdapter() {
 	return lastAdapter.adapter;
 }
 
-const agentMessages = createAgentMessages();
+const agentMessages = createAgentMessages(
+	"System: This demo is for creating beautiful interfaces. Focus on elegant layout, typography, and clear visual hierarchy."
+);
 const tools = [
 	jsInterpreterTool(),
 	jsRunTool(),
