@@ -1,8 +1,8 @@
 import type { JsonSchema, ToolAction, ToolContext, ToolDefinition } from "./types";
 
 const jsInterpreterDescription = `Run JavaScript inside the browser with DOM helpers.
-Use it to modify the DOM and return results. jQuery (\`$\`) is available.
-Helpers: \`x()\`, \`replaceSubtree()\`, \`diffSubtree()\`, \`viewRoot\`, \`document\`, \`window\`.`;
+Use it to modify the DOM and return results. Code runs inside an IIFE; return explicitly.
+jQuery (\`$\`) is available. Helpers: \`x()\`, \`replaceSubtree()\`, \`diffSubtree()\`, \`viewRoot\`, \`document\`, \`window\`.`;
 
 type RuntimeEnv = {
 	document?: Document;
@@ -443,7 +443,7 @@ const domBindEventDescription =
 	"Attach a JS event handler to all nodes matching the XPath selector (scoped to view root; use '/' for root and '//' for descendants). Handler receives event, element, document, window, $. Use this instead of injecting <script>. Returns ok=false if no match.";
 
 const jsRunDescription =
-	"Run a JavaScript snippet inside the browser and return its result. Use jQuery ($) for DOM/event work.";
+	"Run a JavaScript snippet inside the browser and return its result. Code runs inside an IIFE; return explicitly. Use jQuery ($) for DOM/event work.";
 
 export function domSummaryTool(): Tool {
 	const inputSchema = {
