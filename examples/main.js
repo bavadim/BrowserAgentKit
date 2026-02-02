@@ -13,6 +13,7 @@ import {
 	Skill,
 	withStatus,
 } from "browseragentkit";
+import { createChatUi } from "browseragentkit/ui";
 
 const runBtn = document.getElementById("runBtn");
 const chatLog = document.getElementById("chatLog");
@@ -45,131 +46,14 @@ if (promptInput) {
 	});
 }
 
-function scrollChatToBottom() {
-	if (!chatLog) {
-		return;
-	}
-	chatLog.scrollTop = chatLog.scrollHeight;
+const chatUi = chatLog ? createChatUi({ container: chatLog }) : null;
+
+function addUserMessage(text) {
+	chatUi?.addUserMessage(text);
 }
 
-function addMessage(role, text) {
-	if (!chatLog) {
-		return;
-	}
-	const wrapper = document.createElement("div");
-	wrapper.className = `message ${role}`;
-
-	const bubble = document.createElement("div");
-	bubble.className = "bubble";
-	bubble.textContent = text;
-
-	wrapper.appendChild(bubble);
-	chatLog.appendChild(wrapper);
-	scrollChatToBottom();
-}
-
-let activeAssistantBubble = null;
-let activeAssistantText = "";
-let activeAssistantIsStatus = false;
-let thinkingSummary = "";
-
-function ensureAssistantBubble() {
-	if (!chatLog) {
-		return null;
-	}
-	if (!activeAssistantBubble) {
-		const wrapper = document.createElement("div");
-		wrapper.className = "message assistant";
-		const bubble = document.createElement("div");
-		bubble.className = "bubble";
-		wrapper.appendChild(bubble);
-		chatLog.appendChild(wrapper);
-		activeAssistantBubble = bubble;
-		activeAssistantText = "";
-		chatLog.scrollTop = chatLog.scrollHeight;
-	}
-	return activeAssistantBubble;
-}
-
-function appendAssistantDelta(delta) {
-	const bubble = ensureAssistantBubble();
-	if (!bubble) {
-		return;
-	}
-	if (activeAssistantIsStatus) {
-		bubble.classList.remove("status");
-		activeAssistantIsStatus = false;
-		activeAssistantText = "";
-	}
-	activeAssistantText += delta;
-	bubble.textContent = activeAssistantText;
-	scrollChatToBottom();
-}
-
-function finalizeAssistantMessage(text) {
-	const bubble = ensureAssistantBubble();
-	if (bubble) {
-		bubble.classList.remove("status");
-		bubble.textContent = text ?? "";
-	}
-	activeAssistantBubble = null;
-	activeAssistantText = "";
-	activeAssistantIsStatus = false;
-	scrollChatToBottom();
-}
-
-function statusLabel(status) {
-	if (status.label) {
-		return status.label;
-	}
-	switch (status.kind) {
-		case "thinking":
-			return thinkingSummary ? `Thinking: ${thinkingSummary}` : "Thinking...";
-		case "calling_tool":
-			return status.toolName ? `Calling ${status.toolName}...` : "Calling a tool...";
-		case "tool_result":
-			return status.toolName ? `Received result from ${status.toolName}.` : "Received tool result.";
-		default:
-			return "";
-	}
-}
-
-function showAssistantStatus(status) {
-	if (!status || status.kind === "done") {
-		if (activeAssistantIsStatus) {
-			finalizeAssistantMessage("");
-		}
-		return;
-	}
-	const label = statusLabel(status);
-	if (!label) {
-		return;
-	}
-	const bubble = ensureAssistantBubble();
-	if (!bubble) {
-		return;
-	}
-	bubble.classList.add("status");
-	bubble.textContent = label;
-	activeAssistantText = "";
-	activeAssistantIsStatus = true;
-	scrollChatToBottom();
-}
-
-function setStatus(status) {
-	if (status.kind !== "thinking") {
-		thinkingSummary = "";
-	}
-	showAssistantStatus(status);
-}
-
-function setThinkingSummary(summary) {
-	thinkingSummary = summary;
-	showAssistantStatus({ kind: "thinking" });
-}
-
-function appendThinkingDelta(delta) {
-	setThinkingSummary(thinkingSummary + delta);
+function addAssistantMessage(text) {
+	chatUi?.finalizeAssistantMessage(text);
 }
 
 const skills = [Skill.fromDomSelector("//script[@id='skill-canvas-render']", document)];
@@ -215,7 +99,7 @@ const agentContext = { viewRoot: canvas };
 
 runBtn.addEventListener("click", async () => {
 	if (!canvas) {
-		addMessage("assistant", "Canvas element not found.");
+		addAssistantMessage("Canvas element not found.");
 		return;
 	}
 	const prompt = promptInput.value.trim();
@@ -224,12 +108,11 @@ runBtn.addEventListener("click", async () => {
 		return;
 	}
 
-	addMessage("user", prompt);
+	let thinkingSummary = "";
+
+	addUserMessage(prompt);
 	runBtn.disabled = true;
-	activeAssistantBubble = null;
-	activeAssistantText = "";
-	thinkingSummary = "";
-	showAssistantStatus({ kind: "thinking", label: "Working..." });
+	chatUi?.setStatus({ kind: "thinking", label: "Working..." });
 
 	try {
 		const adapter = getAdapter();
@@ -254,24 +137,29 @@ runBtn.addEventListener("click", async () => {
 				} else {
 					console.error(new Error(String(error)));
 				}
-				addMessage("assistant", `${String(error)}`);
+				addAssistantMessage(`${String(error)}`);
 				break;
 			}
 			const event = ev.right;
 			if (event.type === "message.delta") {
-				appendAssistantDelta(event.delta);
+				chatUi?.appendAssistantDelta(event.delta);
 			}
 			if (event.type === "message") {
-				finalizeAssistantMessage(event.content);
+				chatUi?.finalizeAssistantMessage(event.content);
 			}
 			if (event.type === "status") {
-				setStatus(event.status);
+				if (event.status.kind !== "thinking") {
+					thinkingSummary = "";
+				}
+				chatUi?.setStatus(event.status);
 			}
 			if (event.type === "thinking.delta") {
-				appendThinkingDelta(event.delta);
+				thinkingSummary += event.delta;
+				chatUi?.setThinkingSummary(thinkingSummary);
 			}
 			if (event.type === "thinking") {
-				setThinkingSummary(event.summary);
+				thinkingSummary = event.summary;
+				chatUi?.setThinkingSummary(event.summary);
 			}
 		}
 	} catch (error) {
@@ -280,7 +168,7 @@ runBtn.addEventListener("click", async () => {
 		} else {
 			console.error(new Error(String(error)));
 		}
-		addMessage("assistant", `${String(error)}`);
+		addAssistantMessage(`${String(error)}`);
 	} finally {
 		runBtn.disabled = false;
 		if (promptInput) {

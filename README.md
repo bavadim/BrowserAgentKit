@@ -92,6 +92,21 @@ for await (const ev of runAgent(
 The agent preserves conversation history across runs; create a fresh `createAgentMessages()` array to clear it (system prompt is kept).
 If `runAgent()` is called again with the same messages array, the previous run is aborted.
 
+## Optional chat UI
+
+```ts
+import { createChatUi } from "browseragentkit/ui";
+
+const chat = createChatUi({ container: document.getElementById("chatLog") });
+
+chat.addUserMessage("Hello");
+chat.appendAssistantDelta("Hi");
+chat.finalizeAssistantMessage("Hi there!");
+```
+
+The UI appends DOM nodes with classes: `message`, `user`, `assistant`, `bubble`, and `status`.
+Bring your own CSS to style them (see `examples/index.html` for the demo styles).
+
 ## Concepts
 
 ### Skills
@@ -186,6 +201,7 @@ If you load the demo via plain `importmap`, add jQuery:
 {
   "imports": {
     "browseragentkit": "../dist/index.js",
+    "browseragentkit/ui": "../dist/ui/index.js",
     "openai": "../node_modules/openai/index.mjs",
     "jquery": "../node_modules/jquery/dist/jquery.min.js"
   }

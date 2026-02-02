@@ -120,3 +120,36 @@ export type AgentGenerate = (
 	tools?: ToolDefinition[],
 	signal?: AbortSignal
 ) => AsyncIterable<AgentStreamEvent>;
+
+export type ChatRole = "user" | "assistant";
+
+export type ChatMessage = {
+	role: ChatRole;
+	text: string;
+};
+
+export type ChatStatus =
+	| { kind: "thinking"; label?: string }
+	| { kind: "calling_tool"; toolName?: string; label?: string }
+	| { kind: "tool_result"; toolName?: string; label?: string }
+	| { kind: "done" };
+
+export type ChatUiStatusLabels = {
+	thinking: string;
+	callingTool: string;
+	toolResult: string;
+};
+
+export type ChatUiOptions = {
+	container: HTMLElement;
+	initialMessages?: ChatMessage[];
+	statusLabels?: Partial<ChatUiStatusLabels>;
+};
+
+export type ChatUiController = {
+	addUserMessage: (text: string) => void;
+	appendAssistantDelta: (delta: string) => void;
+	finalizeAssistantMessage: (text?: string) => void;
+	setStatus: (status: ChatStatus | null) => void;
+	setThinkingSummary: (summary: string) => void;
+};
