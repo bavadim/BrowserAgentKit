@@ -175,6 +175,26 @@ export class Skill {
 		return new Skill(name, description, parsed.body);
 	}
 
+	public static fromMarkdown(markdown: string, sourceName?: string): Skill {
+		const rawMarkdown = markdown.trim();
+		if (!rawMarkdown) {
+			if (sourceName) {
+				throw new Error(`Skill markdown is empty for source: ${sourceName}`);
+			}
+			throw new Error("Skill markdown is empty.");
+		}
+		const parsed = Skill.parseMarkdown(rawMarkdown);
+		const name = parsed.frontmatter.name?.trim();
+		if (!name) {
+			if (sourceName) {
+				throw new Error(`Skill frontmatter must include a non-empty name for source: ${sourceName}`);
+			}
+			throw new Error("Skill frontmatter must include a non-empty name.");
+		}
+		const description = parsed.frontmatter.description?.trim();
+		return new Skill(name, description, parsed.body);
+	}
+
 	private static sanitizePrompt(prompt: string): string {
 		return prompt
 			.replace(/<script[\s\S]*?<\/script>/gi, "")

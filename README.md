@@ -107,6 +107,31 @@ chat.finalizeAssistantMessage("Hi there!");
 The UI appends DOM nodes with classes: `message`, `user`, `assistant`, `bubble`, and `status`.
 Bring your own CSS to style them (see `examples/index.html` for the demo styles).
 
+## Static skills from files (Vite)
+
+BrowserAgentKit can load Codex-style skills from `SKILL.md` files at build time and inject them into the DOM.
+
+```ts
+// vite.config.ts
+import { defineConfig } from "vite";
+import { codexSkillPlugin } from "browseragentkit/skills/vite";
+
+export default defineConfig({
+  plugins: [codexSkillPlugin({ root: "./skills", mode: "dom" })],
+});
+```
+
+At runtime, load a skill from the injected DOM:
+
+```ts
+import { Skill } from "browseragentkit";
+
+const skill = Skill.fromDomSelector("//script[@data-skill='canvas.render' and @data-kind='prompt']", document);
+```
+
+The plugin injects `script[type="text/plain"]` nodes under `#bak-skills-root` with:
+`data-skill`, `data-kind` (`prompt | reference | script`), and `data-path`.
+
 ## Concepts
 
 ### Skills

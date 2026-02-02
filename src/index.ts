@@ -3,3 +3,4 @@ export * from "./agent";
 export * from "./adapters";
 export * from "./skill";
 export * from "./tools";
+export * from "./skills-static";

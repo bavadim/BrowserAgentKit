@@ -153,3 +153,5 @@ export type ChatUiController = {
 	setStatus: (status: ChatStatus | null) => void;
 	setThinkingSummary: (summary: string) => void;
 };
+
+export type SkillModuleMap = Record<string, string>;
