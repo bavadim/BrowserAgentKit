@@ -70,13 +70,20 @@ export const applyStreamEvent = (
 			state.textBuffer += event.delta;
 			return { outcome: "continue", outputs: [event] };
 		case "message":
+			console.log(`[agent] assistant ${event.content}`);
 			state.finalText = event.content;
 			state.sawMessage = true;
 			return { outcome: "continue", outputs: [event] };
 		case "thinking.delta":
+			console.log(
+				`[agent] thinking.delta tokens=${Math.ceil(event.delta.trim().length / 4)} ${event.delta}`
+			);
 			state.reasoningSummaryBuffer += event.delta;
 			return { outcome: "continue", outputs: [event] };
 		case "thinking":
+			console.log(
+				`[agent] thinking.summary tokens=${Math.ceil(event.summary.trim().length / 4)} ${event.summary}`
+			);
 			state.finalReasoningSummary = event.summary;
 			state.sawThinking = true;
 			return { outcome: "continue", outputs: [event] };
@@ -215,6 +222,14 @@ export async function* runToolCall(
 	basePrompt: string,
 	loopMessages: Message[]
 ): AsyncGenerator<AgentStreamEvent, StreamOutcome, void> {
+	if (target.kind === "skill") {
+		console.log(`[agent] skill.start ${call.name}`, {
+			callId: call.id,
+			args,
+		});
+	} else {
+		console.log(`[agent] tool.start ${call.name}`, { callId: call.id, args });
+	}
 	yield right(toolStartEvent(call, args, target));
 	if (target.kind === "skill") {
 		const result = await runSkill(target, ctx, signal, maxSteps, generate, runAgent, basePrompt);
@@ -225,6 +240,9 @@ export async function* runToolCall(
 		for (const event of result.right.events) {
 			yield right(event);
 		}
+		console.log(`[agent] skill.end ${call.name}`, {
+			result: result.right.output,
+		});
 		yield right(toolEndEvent(call, result.right.output, target));
 		addToolOutput(loopMessages, call.id ?? "tool-call", result.right.output ?? null);
 		return "continue";
@@ -237,6 +255,7 @@ export async function* runToolCall(
 		yield left(result.left);
 		return "error";
 	}
+	console.log(`[agent] tool.end ${call.name}`, { result: result.right });
 	yield right(toolEndEvent(call, result.right, target));
 	addToolOutput(loopMessages, call.id ?? "tool-call", result.right ?? null);
 	return "continue";

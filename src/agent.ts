@@ -303,6 +303,10 @@ export async function* runAgent(
 		}
 	}
 	history.push({ role: "user", content: input });
+	if (!skipActiveRuns) {
+		console.log("[agent] start");
+		console.log(`[agent] user ${input}`);
+	}
 	let sawError = false;
 	const callableMap = new Map<string, Callable>();
 	for (const callable of callables) {
@@ -351,6 +355,7 @@ export async function* runAgent(
 			for await (const event of stream) {
 				if (E.isLeft(event)) {
 					sawError = true;
+					console.error(`[agent] error ${event.left.message}`);
 					yield event;
 					return;
 				}
@@ -366,6 +371,9 @@ export async function* runAgent(
 
 			const thinkingEvent = flushThinking(stepState);
 			if (thinkingEvent) {
+				console.log(
+					`[agent] thinking.summary tokens=${Math.ceil(thinkingEvent.summary.trim().length / 4)} ${thinkingEvent.summary}`
+				);
 				yield right(thinkingEvent);
 			}
 
@@ -385,6 +393,7 @@ export async function* runAgent(
 					const resolved = resolveTarget(call, args);
 					if (E.isLeft(resolved)) {
 						sawError = true;
+						console.error(`[agent] error ${resolved.left.message}`);
 						yield left(resolved.left);
 						return;
 					}
@@ -410,6 +419,7 @@ export async function* runAgent(
 						}
 						if (E.isLeft(value)) {
 							sawError = true;
+							console.error(`[agent] error ${value.left.message}`);
 							yield value;
 							return;
 						}
@@ -430,6 +440,7 @@ export async function* runAgent(
 			if (content) {
 				history.push({ role: "assistant", content });
 				if (!stepState.sawMessage) {
+					console.log(`[agent] assistant ${content}`);
 					yield right({ type: "message", content });
 				}
 				break;
@@ -440,6 +451,9 @@ export async function* runAgent(
 	} finally {
 		if (!skipActiveRuns && controller && activeRuns.get(history) === controller) {
 			activeRuns.delete(history);
+		}
+		if (!skipActiveRuns) {
+			console.log(`[agent] done hasError=${sawError} aborted=${runSignal?.aborted ?? false}`);
 		}
 	}
 	if (!sawError) {
