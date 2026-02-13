@@ -177,7 +177,10 @@ function renderToolList() {
 
 renderToolList();
 function getEnabledSkills() {
-	return skills.filter((skill) => enabledSkills.has(skill.name));
+	const enabledChildCallables = getEnabledTools();
+	return skills
+		.filter((skill) => enabledSkills.has(skill.name))
+		.map((skill) => skill.withCallables(enabledChildCallables));
 }
 
 function getEnabledTools() {
