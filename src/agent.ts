@@ -370,7 +370,7 @@ export async function* runAgent(
 			}
 
 			const thinkingEvent = flushThinking(stepState);
-			if (thinkingEvent) {
+			if (thinkingEvent && thinkingEvent.type === "thinking") {
 				console.log(
 					`[agent] thinking.summary tokens=${Math.ceil(thinkingEvent.summary.trim().length / 4)} ${thinkingEvent.summary}`
 				);
